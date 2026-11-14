@@ -148,7 +148,7 @@ Pour les essais de vision, annoter séparément le début de la chute et le cont
 | --- | --- |
 | Incident fictif, annulation, réponse et délai | Réglages Windows avec aperçu fictif. L’annulation avant échéance ne crée aucune tentative. Après échéance, **Simulé** puis **En route** avec environ 20 min, ou **À vérifier** / **Indisponible** selon le texte. |
 | Panne et résultat SMS incertain, reprise, livraison | Tests avec transport Twilio factice. Un délai dépassé ou une interruption après enregistrement ne provoquent aucun renvoi. Un statut `sent` reste en attente. |
-| MP4 avec Twilio configuré | Isolation vérifiée à la frontière SMS avec configuration factice. Lecture par le moteur de vision à vérifier avec Adam. |
+| MP4 avec Twilio configuré | Isolation vérifiée à la frontière SMS avec configuration factice, puis avec le moteur de surveillance du lot 1 (test d’intégration : aucun appel au transport en MP4 ni en démo). |
 | Réponses étrangères, anciennes, dupliquées, ambiguës et panne du modèle | Tests du filtrage, des horodatages, du SID et du contrat d’association. Sorties OpenRouter simulées, y compris l’échec et le refus d’un délai inventé. |
 | Poste cible | Recette commune ouverte pour la vision, l’audibilité, Twilio et le téléphone, ainsi que la qualité d’interprétation du modèle hébergé. |
 

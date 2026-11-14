@@ -2,9 +2,9 @@
 
 Application Windows de surveillance par webcam fixe. Elle détecte une chute probable (Python, OpenCV, MediaPipe Pose), fait parler le PC en français avec eSpeak NG hors ligne, affiche un compte à rebours de 10 secondes (réglable), puis prévient un proche par SMS si personne n'annule. Le proche peut répondre par SMS et l'écran affiche sa réponse. C'est un dispositif d'appoint : il exige un poste allumé et une caméra opérationnelle.
 
-Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartition du travail dans [PLAN.md](PLAN.md) et le raccordement avec le module SMS dans [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md).
+Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartition du travail dans [PLAN.md](PLAN.md), le raccordement des deux lots dans [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md) et le contrat du lot 2 dans [docs/integration-lot-2.md](docs/integration-lot-2.md).
 
-**État de la V1 (lot 1).** Capture, détection, incidents, voix, écran de surveillance, démo et tests sont en place. Le SMS fonctionne en **mode simulé** (par défaut). L'adaptateur Twilio, l'interpréteur OpenRouter et la page Réglages complète sont fournis par le lot d'Abdoullah : tant qu'ils ne sont pas reliés, une simulation et une page Réglages provisoire prennent le relais.
+**État de la V1.** Les lots 1 et 2 sont raccordés : capture, détection, incidents, voix et écran de surveillance (lot 1) pilotent le service SMS Twilio, l'interpréteur OpenRouter et la page Réglages (lot 2). Le SMS est **simulé par défaut**. Le chemin réel (Twilio, OpenRouter) est vérifié avec des transports factices seulement : l'essai sur téléphone reste à faire.
 
 ## Versions vérifiées
 
@@ -18,7 +18,7 @@ Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartiti
 | eSpeak NG | 1.52.0 (`winget install eSpeak-NG.eSpeak-NG`) |
 | Modèle de pose | `pose_landmarker_lite.task` (float16, version 1), source officielle Google [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker), empreinte SHA-256 vérifiée par `install.ps1` |
 
-Les autres versions de Python n'ont pas été essayées. Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests ont réussi.
+Les autres versions de Python n'ont pas été essayées. `pyproject.toml` demande Python 3.11 ou plus (lot 2). Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests du lot 1 ont réussi ; la suite complète compte maintenant 165 tests.
 
 ## Installer
 
@@ -41,6 +41,12 @@ Si l'exécution de scripts est bloquée : `powershell -ExecutionPolicy Bypass -F
 ```
 
 Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests ne peuvent jamais envoyer de SMS réel, même avec des identifiants Twilio valides. Le mode réel exige `sms_mode = live`, l'activation explicite dans les réglages et une vraie webcam.
+
+## Réglages, SMS réel et OpenRouter
+
+Le bouton **Réglages** ouvre la page du lot 2 : caméra et zones, voix, décompte, SMS (mode **Simulé** ou **Réel**) et simulation d'incident. Les réglages sont enregistrés dans `config.local.json` et s'appliquent au moteur en cours : le décompte, les numéros et les services valent pour les nouveaux incidents.
+
+Pour le mode réel, copie `.env.example` en `.env` et renseigne sur le poste `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OPENROUTER_API_KEY` (et `OPENROUTER_MODEL` si besoin). Choisis ensuite **Réel** dans l'onglet **SMS** et utilise **Vérifier le canal**. L'envoi d'un SMS réel exige en plus une vraie webcam : la lecture d'un MP4 et la démo restent simulées. Procédure d'essai réel avec le téléphone convenu : [docs/integration-lot-2.md](docs/integration-lot-2.md). La recette SMS du lot 2 seule : `python -m faaall_alarm --sms-recipe`.
 
 Commandes de l'écran : **Squelette** (affiche le squelette), **Historique** (événements locaux, avec effacement), **Réglages**. **Tout copier** copie tout le journal horodaté de la session, données sensibles masquées.
 
@@ -74,7 +80,9 @@ Les tests n'utilisent ni webcam, ni Internet, ni SMS réel, ni délai réel de d
 | `faaall_alarm/incident.py` | Moteur d'incident : décompte, annulation, clôture, une seule soumission, rattachement des réponses |
 | `faaall_alarm/sms_contract.py`, `sms_simulated.py`, `integration.py` | Contrat avec le module SMS, substituts simulés, frontière d'envoi réel |
 | `faaall_alarm/voice.py` | eSpeak NG (français, hors ligne) |
-| `faaall_alarm/config.py`, `settings_services.py` | Seuils nommés, réglages, lecture/validation/application |
+| `faaall_alarm/config.py`, `settings_backend.py` | Seuils nommés, réglages, lecture/validation/application, backend de la page Réglages |
+| `faaall_alarm/sms.py`, `replies.py`, `settings.py`, `settings_page.py`, `http.py` | Lot 2 : Twilio, OpenRouter, page Réglages (voir [docs/integration-lot-2.md](docs/integration-lot-2.md)) |
+| `faaall_alarm/adapters.py` | Adaptateurs entre les types du lot 2 et les protocoles du moteur d'incident |
 | `faaall_alarm/core.py`, `app.py`, `ui/` | Assemblage, fil d'analyse, écran Tkinter |
 | `faaall_alarm/simulation/` | Scénarios de mannequins, rendu MP4, démo |
 
@@ -82,4 +90,4 @@ Les seuils de détection (valeurs par défaut et unités) sont dans `DetectionTh
 
 ## Données locales
 
-Les images et la pose restent en mémoire. L'historique (événements, transitions, issue, statut du SMS) est écrit dans `data\history.jsonl` (ignoré par Git), numéros masqués et sans texte brut des réponses. Les réglages sont dans `config.local.json` (ignoré par Git) et ne contiennent jamais de secret. Voir [.env.example](.env.example).
+Les images et la pose restent en mémoire. L'historique (événements, transitions, issue, statut du SMS) est écrit dans `data\history.jsonl` (ignoré par Git), numéros masqués et sans texte brut des réponses. Les réglages sont dans `config.local.json` (ignoré par Git) et ne contiennent jamais de secret. Les bases du lot 2 (SMS, incidents) sont dans `%LOCALAPPDATA%\FAAALL-ALARM`. Voir [.env.example](.env.example).
