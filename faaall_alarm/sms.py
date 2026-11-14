@@ -12,7 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
-from .http import ServiceError, request_json
+from .http import ServiceError, numeric_error_code, request_json
 
 
 E164 = re.compile(r"\+[1-9][0-9]{7,14}")
@@ -87,6 +87,9 @@ def twilio_diagnostic(error: ServiceError) -> str:
     hint = hints.get(error.code)
     if hint is None and error.status in {401, 403}:
         hint = hints[20003]
+    if error.status == 400 and error.code is None:
+        hint = ("Requête rejetée. Aucun code Twilio exploitable dans la réponse. "
+                "Cherchez l’erreur à l’heure du test dans Twilio Console → Monitor → Errors.")
     if details:
         return " · ".join(details) + f". {hint or 'Consultez les journaux de messagerie Twilio.'}"
     return f"Twilio · {error.reason}. Vérifiez la connexion et les journaux Twilio."
@@ -178,8 +181,8 @@ class _Twilio:
         state = _delivery(result.get("status"))
         if state is not Delivery.FAILED:
             return state, None
-        code = result.get("error_code")
-        if type(code) is int and 10000 <= code <= 99999:
+        code = numeric_error_code(result.get("error_code"))
+        if code is not None:
             return state, f"Livraison · {twilio_diagnostic(ServiceError(code=code))}"
         return state, "Livraison refusée. Consultez les journaux de messagerie Twilio."
 

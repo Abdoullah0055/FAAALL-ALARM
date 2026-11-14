@@ -101,8 +101,6 @@ class SettingsPage:
         self.real_result = tk.StringVar(window, "SMS non vérifié")
         ttk.Label(sms, textvariable=self.real_result, wraplength=500, justify="left").grid(
             row=7, columnspan=2, sticky="w")
-        ttk.Label(sms, text="Configurez les identifiants Twilio et OpenAI dans le fichier .env local.",
-                  wraplength=500).grid(row=8, columnspan=2, sticky="w", pady=8)
 
         ttk.Label(demo, text="Incident fictif", font=("Segoe UI", 15, "bold")).grid(sticky="w")
         ttk.Label(demo, text="Marie · 123, rue Exemple, Montréal").grid(row=1, sticky="w", pady=(4, 14))

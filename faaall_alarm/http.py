@@ -1,6 +1,7 @@
 """Transport JSON borné, sans redirection ni répétition implicite d'un POST."""
 
 import json
+import re
 from http.client import HTTPException
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -13,6 +14,14 @@ class ServiceError(Exception):
         self.status = status
         self.code = code
         self.reason = reason
+
+
+def numeric_error_code(value: object) -> int | None:
+    if type(value) is int and 10000 <= value <= 99999:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{4}", value):
+        return int(value)
+    return None
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -31,9 +40,7 @@ def request_json(url: str, headers: dict[str, str], body: bytes | None = None) -
             with error:
                 payload = json.loads(error.read(8192))
             if isinstance(payload, dict):
-                raw_code = payload.get("code")
-                if type(raw_code) is int and 10000 <= raw_code <= 99999:
-                    code = raw_code
+                code = numeric_error_code(payload.get("code"))
         except (HTTPException, OSError, ValueError):
             pass
         raise ServiceError(error.code, code=code) from None

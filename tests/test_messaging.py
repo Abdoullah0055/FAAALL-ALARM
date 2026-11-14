@@ -134,7 +134,7 @@ class SmsTests(unittest.TestCase):
         self.assertIn("TWILIO_AUTH_TOKEN", incomplete.check_diagnostic())
 
         def reject(request, timeout):
-            payload = json.dumps({"code": 21608, "message": CONFIG.recipient}).encode()
+            payload = json.dumps({"code": "21608", "message": CONFIG.recipient}).encode()
             raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
 
         with patch("faaall_alarm.http.build_opener") as opener:
@@ -145,6 +145,15 @@ class SmsTests(unittest.TestCase):
         label = sms_test_label(result)
         self.assertIn("SMS de test · Échec\nSoumission · HTTP 400 · code Twilio 21608", label)
         self.assertNotIn(CONFIG.recipient, label)
+
+    def test_settings_diagnostic_points_to_debugger_for_http_400_without_code(self):
+        def reject(*args):
+            raise ServiceError(400)
+
+        service = self.service(reject, Source.MANUAL_SMS)
+        label = sms_test_label(service.submit(ALERT, confirmed_test=True))
+        self.assertIn("Soumission · HTTP 400", label)
+        self.assertIn("Monitor → Errors", label)
 
     def test_settings_diagnostic_reports_delivery_error_code(self):
         def transport(url, headers, body=None):
