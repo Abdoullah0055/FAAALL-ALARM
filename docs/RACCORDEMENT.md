@@ -22,7 +22,7 @@ Le SMS réel exige `sms_mode = live`, l'activation explicite (choisir **Réel** 
 
 ## Vérifié
 
-- 165 tests, dont `tests/test_integration_lot2.py` : parcours complet avec le vrai `SmsService` simulé, base SQLite et acquittement ; parcours « réel » avec transports Twilio et OpenAI factices (envoi, statut **Livré**, réponse, délai de 20 min, aucune coordonnée envoyée à OpenAI) ; panne OpenAI ; identifiants d'incident uniques ; page Réglages (charger, valider, appliquer, rouvrir, erreurs par champ, aperçu).
+- 169 tests, dont `tests/test_integration_lot2.py` : parcours complet avec le vrai `SmsService` simulé, base SQLite et acquittement ; parcours « réel » avec transports Twilio et OpenAI factices (envoi, statut **Livré**, réponse, délai de 20 min, aucune coordonnée envoyée à OpenAI) ; panne OpenAI ; identifiants d'incident uniques ; page Réglages (charger, valider, appliquer, rouvrir, erreurs par champ, aperçu).
 - Fenêtre réelle en démo : **Réglages** ouvre la page du lot 2, et l'écran affiche « Sophie a répondu. En route. Arrivée estimée dans 20 min. » après le SMS simulé.
 - `.\scripts\demo.ps1` et `python -m faaall_alarm --sms-recipe` (recette SMS du lot 2 dans le terminal).
 

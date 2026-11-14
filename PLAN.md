@@ -26,11 +26,16 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 - [x] **Configuration et historique.** Fournir les fonctions de lecture, de validation et d’application des réglages dont la page d’Abdoullah a besoin. Brancher le bouton **Réglages** de l’écran de surveillance sur sa page. Enregistrer les événements utiles et permettre d’effacer l’historique. Sur l’écran de surveillance, utiliser **Personne** ou **Personne 1** et **Personne 2**, selon le nombre de personnes suivies.
   *Fait et vérifié :* `read_config`, `validate_config`, `apply_config`, historique local avec effacement, bouton **Réglages** relié à la page d’Abdoullah par `AppSettingsBackend` (voir [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md)).
 - [x] **Tests et intégration.** Tester le moteur avec une horloge contrôlable et des observations simulées. Brancher l’adaptateur SMS simulé fourni par Abdoullah, puis l’adaptateur Twilio. Vérifier que la réception des réponses et les appels réseau n’interrompent ni la capture ni l’interface.
-  *Fait :* moteur testé avec horloge contrôlable, `SmsService` et `OpenAI` du lot 2 branchés (simulé, puis chemin réel avec transports factices), frontière d’envoi réel testée, appels réseau sur des fils de travail. *Reste :* essai réel Twilio et OpenAI sur le poste cible.
+  *Fait :* moteur testé avec horloge contrôlable, `SmsService` et `OpenAI` du lot 2 branchés (simulé, puis chemin réel avec transports factices), frontière d’envoi réel testée. Les appels réseau, la lecture des réponses et l’interprétation tournent sur des fils de travail dédiés, sans chevauchement de sondages : vérifié avec une passerelle volontairement bloquée (`tests/test_non_blocking.py`), l’analyse des images et le décompte continuent. *Reste :* essai réel Twilio et OpenAI sur le poste cible (voir ci-dessous).
 
 **Livrable du lot.** Une application Windows lançable selon le README, capable de lire la webcam ou un MP4, de détecter un scénario de chute, de diffuser la voix et de montrer le parcours SMS simulé jusqu’à la réponse du proche.
 
-**État du lot (V1).** Le livrable est atteint et les deux lots sont raccordés ([docs/RACCORDEMENT.md](docs/RACCORDEMENT.md), 165 tests) : `.\scripts\demo.ps1` rejoue un MP4, déclenche la voix, affiche le décompte puis simule le SMS et la réponse « Je suis en route, j’arrive dans environ 20 minutes ». Il reste les essais sur le poste cible : cadrage, voix audible, calibration des seuils, essai réel Twilio et OpenAI avec le téléphone convenu.
+**État du lot (V1).** Le livrable est atteint et les deux lots sont raccordés ([docs/RACCORDEMENT.md](docs/RACCORDEMENT.md), 169 tests) : `.\scripts\demo.ps1` rejoue un MP4, déclenche la voix, affiche le décompte puis simule le SMS et la réponse « Je suis en route, j’arrive dans environ 20 minutes ». Tout ce qui se réalise et se vérifie dans le dépôt est terminé. Il reste quatre vérifications qui exigent le poste cible, un corpus indépendant ou l’accord du proche : elles gardent **Voix locale** ouverte.
+
+- [ ] Voix audible et intelligible depuis la zone surveillée (poste cible).
+- [ ] Cadrage de la webcam et calibration des seuils de `DetectionThresholds` (poste cible).
+- [ ] Mesure sur des données indépendantes : chutes manquées, fausses alertes par heure, délai contact-voix (dépend du corpus du lot 2).
+- [ ] Essai réel Twilio et OpenAI avec le téléphone convenu : envoi, livraison, réponse affichée (accord explicite du destinataire).
 
 ## Lot 2 — Abdoullah
 

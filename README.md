@@ -18,7 +18,7 @@ Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartiti
 | eSpeak NG | 1.52.0 (`winget install eSpeak-NG.eSpeak-NG`) |
 | Modèle de pose | `pose_landmarker_lite.task` (float16, version 1), source officielle Google [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker), empreinte SHA-256 vérifiée par `install.ps1` |
 
-Les autres versions de Python n'ont pas été essayées. `pyproject.toml` demande Python 3.11 ou plus (lot 2). Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests du lot 1 ont réussi ; la suite complète compte maintenant 165 tests.
+Les autres versions de Python n'ont pas été essayées. `pyproject.toml` demande Python 3.11 ou plus (lot 2). Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests du lot 1 ont réussi ; la suite complète compte maintenant 169 tests.
 
 ## Installer
 
