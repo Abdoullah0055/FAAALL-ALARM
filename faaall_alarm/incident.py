@@ -251,6 +251,8 @@ class IncidentEngine:
                 SmsStatus.DELIVERED: "SMS livré",
                 SmsStatus.FAILED: f"SMS en échec : {submission.error or 'refusé'} (l'alerte locale reste disponible)",
                 SmsStatus.UNKNOWN: "Résultat réseau incertain : livraison inconnue, aucun renvoi automatique",
+                SmsStatus.TELEGRAM_ACCEPTED: "Alerte acceptée par Telegram",
+                SmsStatus.TELEGRAM_UNKNOWN: "Envoi Telegram incertain, aucun renvoi automatique",
             }
             self._ports.log(messages[submission.status])
             self._ports.record("sms", incident=incident_id, statut=submission.status.value)
@@ -272,9 +274,11 @@ class IncidentEngine:
             self._seen_message_ids.add(sms.message_id)
             active_incident = self._active()
             settings = active_incident.settings if active_incident else self._settings()
-            if _digits(sms.sender) != _digits(settings.contact_number) or (
-                _digits(sms.recipient) != _digits(settings.twilio_number)
-            ):
+            quoted = sms.incident_ref is not None
+            if quoted and (active_incident is None or sms.incident_ref != active_incident.incident_id):
+                return ReplyRouting.NEEDS_REVIEW
+            if not quoted and (_digits(sms.sender) != _digits(settings.contact_number) or
+                               _digits(sms.recipient) != _digits(settings.twilio_number)):
                 self._ports.log("SMS reçu d'un expéditeur ou d'un numéro inattendu : ignoré")
                 self._ports.record("sms_etranger_ignore")
                 return ReplyRouting.IGNORED_SENDER
@@ -283,10 +287,15 @@ class IncidentEngine:
                 self._ports.log("Réponse reçue, à vérifier (aucun incident ouvert avec alerte soumise)")
                 self._ports.record("reponse_a_verifier", motif="aucun incident ouvert")
                 return ReplyRouting.NEEDS_REVIEW
-            elapsed_s = (sms.received_at - incident.sms_requested_wall).total_seconds()
-            if elapsed_s <= 0 or elapsed_s > settings.reply_window_s or self._ambiguous_with_other_alert(
-                incident, sms, settings
-            ):
+            if quoted:
+                # Telegram fournit des secondes entières UTC. L’horloge Windows est locale.
+                elapsed_s = sms.received_at.timestamp() - int(incident.sms_requested_wall.timestamp())
+                too_early = elapsed_s < 0
+            else:
+                elapsed_s = (sms.received_at - incident.sms_requested_wall).total_seconds()
+                too_early = elapsed_s <= 0
+            if (too_early or elapsed_s > settings.reply_window_s or
+                    (not quoted and self._ambiguous_with_other_alert(incident, sms, settings))):
                 incident.reply.needs_review = True
                 self._ports.log("Réponse reçue, à vérifier (rattachement ambigu à l'incident)")
                 self._ports.record("reponse_a_verifier", incident=incident.incident_id, motif="ambigu")

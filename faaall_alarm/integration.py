@@ -12,12 +12,13 @@ from pathlib import Path
 
 from .adapters import ReplyInterpreterAdapter, SmsServiceGateway
 from .clock import Clock
-from .config import SMS_MODE_LIVE, AppConfig
+from .config import SMS_MODE_LIVE, TELEGRAM_MODE, AppConfig
 from .model import SourceKind
 from .replies import OpenAI
 from .settings import STATE_DIR, LocalSettings, configuration
 from .sms import Mode, SmsConfig, SmsService, Source
 from .sms_log import SMS_LOG_PATH
+from .telegram import TelegramChannel, TelegramGateway, telegram_channel
 from .sms_contract import (
     AlertRequest, IncomingSms, ReplyInterpreter, SmsAvailability, SmsGateway, SmsStatus, SmsSubmission,
 )
@@ -32,7 +33,8 @@ _SOURCES = {
 
 def real_sms_allowed(config: AppConfig, source_kind: SourceKind) -> bool:
     return (
-        config.sms_mode == SMS_MODE_LIVE and config.sms_live_confirmed and source_kind is SourceKind.WEBCAM
+        config.sms_mode in (SMS_MODE_LIVE, TELEGRAM_MODE)
+        and config.sms_live_confirmed and source_kind is SourceKind.WEBCAM
     )
 
 
@@ -78,6 +80,13 @@ def build_sms_gateway(
 ) -> SmsGateway:
     """Passerelle du moteur. Hors webcam ou hors mode réel confirmé, le service est simulé."""
     allowed = real_sms_allowed(config, source_kind)
+    if allowed and config.sms_mode == TELEGRAM_MODE and source_override in (None, Source.CAMERA):
+        secrets = environment if environment is not None else configuration()
+        token = secrets.get("TELEGRAM_BOT_TOKEN") or ""
+        directory = state_dir or STATE_DIR
+        if transport is not None:
+            return TelegramGateway(TelegramChannel(directory / "telegram.sqlite3", token, transport))
+        return TelegramGateway(telegram_channel(directory, token))
     effective = config if allowed else AppConfig(**{**config.to_dict(), "sms_mode": "simulated"})
     options = {key: value for key, value in (("transport", transport), ("now", now)) if value is not None}
     service = SmsService(

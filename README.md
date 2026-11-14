@@ -44,6 +44,17 @@ Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests n
 
 ## Réglages, SMS réel et OpenAI
 
+### Alertes Telegram sur iPhone
+
+1. Dans Telegram, ouvre [@BotFather](https://t.me/BotFather), envoie `/newbot` et choisis un nom puis un identifiant qui se termine par `bot`. Utilise un bot dédié à un seul poste Windows. Ajoute son jeton à `TELEGRAM_BOT_TOKEN` dans le `.env` local et relance l’application.
+2. Dans **Réglages → Telegram**, clique sur **Associer un proche**. Copie le lien, ouvre-le sur l’iPhone avec le compte du proche, touche **Démarrer**, puis confirme sur le PC. Le lien expire après dix minutes.
+3. Avec l’application lancée en mode webcam, utilise **Envoyer un message de test**, puis sur l’iPhone utilise **Répondre** sur ce message et écris « Je suis en route, j’arrive dans 20 minutes ». L’onglet affiche la réponse interprétée si OpenAI est configuré, ou **Réponse reçue, à vérifier**.
+4. Dans **Réglages → SMS**, sélectionne **Telegram** comme canal, renseigne le prénom, l’adresse d’intervention et le nom du proche, puis enregistre. Les alertes de surveillance arrivent dans Telegram.
+
+Le PC et le téléphone ont besoin d’Internet. Telegram reçoit le texte de l’alerte, dont l’adresse d’intervention, et héberge les réponses du proche. **Accepté par Telegram** indique que l’API a accepté le message. La notification et la lecture se vérifient sur l’iPhone. Le jeton et les textes restent hors des journaux.
+
+### Twilio
+
 Si le SMS de test échoue, consulte le résultat dans **Réglages → SMS**. Il indique les champs à corriger, l’étape en échec et les codes HTTP ou Twilio disponibles. **Vérifier le canal** vérifie l’accès à Twilio sans envoyer de SMS.
 
 L’application crée `sms-logs.txt` à la racine du projet au premier événement journalisé. Le fichier local horodate les étapes et relève les motifs de refus reconnus dans la réponse Twilio, même si aucun code n’est fourni. Si la réponse ne permet pas d’identifier le motif, le journal indique les vérifications possibles sans accès à Monitor. Il exclut les numéros, identifiants, secrets et textes SMS. Tu peux le supprimer pour repartir avec un journal vide.

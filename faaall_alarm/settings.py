@@ -2,6 +2,7 @@
 
 import json
 import os
+import sqlite3
 import subprocess
 from tempfile import NamedTemporaryFile
 from dataclasses import asdict, dataclass, field, replace
@@ -10,8 +11,10 @@ from typing import Protocol
 
 from dotenv import dotenv_values
 
+from .config import TELEGRAM_MODE
 from .replies import DEFAULT_MODEL
 from .sms import E164, Mode, SmsConfig
+from .telegram import TOKEN, telegram_channel
 
 
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "FAAALL-ALARM"
@@ -102,8 +105,8 @@ class LocalSettings:
             number = getattr(settings, name)
             if number and not E164.fullmatch(number):
                 errors[name] = "Le numéro doit avoir le format international, par exemple +15145550101."
-        if settings.sms_mode not in {Mode.SIMULATED, Mode.LIVE}:
-            errors["sms_mode"] = "Choisissez Simulé ou Réel."
+        if settings.sms_mode not in {Mode.SIMULATED, Mode.LIVE, TELEGRAM_MODE}:
+            errors["sms_mode"] = "Choisissez Simulé, SMS Twilio ou Telegram."
         elif settings.sms_mode == Mode.LIVE:
             if not self.sms(settings).valid():
                 errors["sms_mode"] = "Vérifiez les deux numéros distincts et les identifiants Twilio locaux."
@@ -113,6 +116,18 @@ class LocalSettings:
                 errors["first_name"] = "Indiquez le prénom de la personne surveillée."
             if not settings.contact_name.strip():
                 errors["contact_name"] = "Indiquez le nom du proche."
+        elif settings.sms_mode == TELEGRAM_MODE:
+            token = self.config.get("TELEGRAM_BOT_TOKEN") or ""
+            try:
+                paired = TOKEN.fullmatch(token) and telegram_channel(self.path.parent, token).chat()
+            except (OSError, sqlite3.Error):
+                paired = None
+            if not paired:
+                errors["sms_mode"] = "Associez un proche dans l’onglet Telegram."
+            for field_name, label in (("first_name", "le prénom"), ("address", "l’adresse"),
+                                      ("contact_name", "le nom du proche")):
+                if not getattr(settings, field_name).strip():
+                    errors[field_name] = f"Indiquez {label}."
         return errors
 
     def apply(self, settings: Settings) -> None:
