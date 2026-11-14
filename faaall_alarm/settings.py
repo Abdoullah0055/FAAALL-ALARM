@@ -11,7 +11,7 @@ from typing import Protocol
 
 from dotenv import dotenv_values
 
-from .config import TELEGRAM_MODE
+from .config import DEFAULT_DOTENV_PATH, TELEGRAM_MODE
 from .replies import DEFAULT_MODEL
 from .sms import E164, Mode, SmsConfig
 from .telegram import TOKEN, telegram_channel
@@ -49,7 +49,7 @@ class SettingsPort(Protocol):
 
 def configuration() -> dict:
     # Aucun export vers le processus ni affichage des valeurs locales.
-    return {**dotenv_values(".env", interpolate=False), **os.environ}
+    return {**dotenv_values(DEFAULT_DOTENV_PATH, interpolate=False), **os.environ}
 
 
 class LocalSettings:

@@ -339,7 +339,8 @@ class SettingsPage:
 
     def telegram_paired(self, _):
         self.telegram_busy = False
-        self.telegram_status.set("Proche associé. Choisissez Telegram et enregistrez les réglages.")
+        self.fields["sms_mode"].set("Telegram")
+        self.telegram_status.set("Proche associé. Cliquez sur Enregistrer pour garder Telegram au redémarrage.")
 
     def send_telegram_test(self):
         if self.telegram_busy:

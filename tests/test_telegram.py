@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from faaall_alarm.clock import ManualClock
-from faaall_alarm.config import AppConfig
+from faaall_alarm.config import AppConfig, apply_config
 from faaall_alarm.http import ServiceError
 from faaall_alarm.integration import build_sms_gateway
 from faaall_alarm.model import FallCause, SourceKind
@@ -16,6 +16,7 @@ from faaall_alarm.simulation.runner import ScenarioRunner, demo_config
 from faaall_alarm.simulation.scenarios import get_scenario
 from faaall_alarm.telegram import TelegramChannel, TelegramError, TelegramGateway
 from faaall_alarm.settings_page import SettingsPage
+from faaall_alarm.settings import configuration
 from faaall_alarm.app import AppOptions, MonitoringApp
 
 
@@ -123,6 +124,36 @@ def test_pairing_expiration_and_bot_change(tmp_path):
         channel.pairing_ready()
     pair(channel, api)
     assert TelegramChannel(channel.database, "124:other", api).chat() is None
+
+
+def test_restart_recovers_saved_channel_and_pairing(tmp_path, monkeypatch):
+    channel, api = channel_and_api(tmp_path)
+    pair(channel, api)
+    path = tmp_path / "config.local.json"
+    monkeypatch.setattr("faaall_alarm.config.load_dotenv", lambda: None)
+    assert apply_config({"sms_mode": "telegram", "sms_live_confirmed": True,
+                         "monitored_first_name": "Marie", "alert_address": "123 rue Exemple"}, path).ok
+    app = MonitoringApp.__new__(MonitoringApp)
+    config, source = app._resolve_config_and_kind(AppOptions(config_path=path))
+    gateway = build_sms_gateway(config, source, ManualClock(), tmp_path,
+                                {"TELEGRAM_BOT_TOKEN": TOKEN}, api)
+    assert gateway.chat == 42
+    assert gateway.check_availability().value == "Bot Telegram accessible"
+    assert not api.posts
+
+
+def test_service_configuration_uses_project_path_from_any_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    paths = []
+
+    def fake_dotenv(path, *, interpolate):
+        paths.append(path)
+        return {"TELEGRAM_BOT_TOKEN": TOKEN}
+
+    monkeypatch.setattr("faaall_alarm.settings.dotenv_values", fake_dotenv)
+    assert configuration()["TELEGRAM_BOT_TOKEN"] == TOKEN
+    assert paths[0].is_absolute() and paths[0].name == ".env"
 
 
 def test_telegram_log_records_pairing_and_refusal_without_private_values(tmp_path):
