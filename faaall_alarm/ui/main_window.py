@@ -32,6 +32,8 @@ class MainWindow:
         self._settings_window: tk.Toplevel | None = None
         self._skeleton_var = tk.BooleanVar(value=app.config.show_skeleton)
         self._photo: ImageTk.PhotoImage | None = None
+        self._rendered_state = None  # image déjà affichée : évite de la recalculer à chaque tick
+        self._rendered_key: tuple | None = None
         self._log_count = 0
         self._alert_visible = False
         self._build()
@@ -169,8 +171,9 @@ class MainWindow:
         self.core.poll_background()
         if self.app.director is not None:
             self.app.director.tick()
-        self._update_video()
-        self.status_label.configure(text=self.core.status_line())
+        status_line = self.core.status_line()
+        self._update_video(status_line)
+        self.status_label.configure(text=status_line)
         state = self.app.latest()
         persons = state.persons if state else []
         self.posture_label.configure(text=self.core.last_posture.value)
@@ -179,10 +182,17 @@ class MainWindow:
         self._append_new_logs()
         self.root.after(REFRESH_MS, self._refresh)
 
-    def _update_video(self) -> None:
+    def _update_video(self, status_line: str) -> None:
         state = self.app.latest()
         canvas = self.video_canvas
         width, height = max(canvas.winfo_width(), 2), max(canvas.winfo_height(), 2)
+        camera_inactive = status_line.startswith("Caméra inactive")
+        # Le rafraîchissement (33 ms) peut tomber entre deux images analysées : sans nouvelle image ni
+        # changement de taille ou d'option, le dessin, la mise à l'échelle et la conversion sont évités.
+        key = (width, height, self._skeleton_var.get(), camera_inactive)
+        if state is not None and state is self._rendered_state and key == self._rendered_key:
+            return
+        self._rendered_state, self._rendered_key = state, key
         canvas.delete("all")
         if state is None or state.image_bgr is None:
             canvas.create_text(width // 2, height // 2, fill="#cccccc", font=(FONT, 14), text="En attente d'images…")
@@ -194,7 +204,7 @@ class MainWindow:
         resized = cv2.resize(image, (max(int(image.shape[1] * scale), 1), max(int(image.shape[0] * scale), 1)))
         self._photo = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)))
         canvas.create_image(0, 0, image=self._photo, anchor="nw")  # aligné en haut à gauche, comme le statut
-        if self.core.status_line().startswith("Caméra inactive"):
+        if camera_inactive:
             canvas.create_text(width // 2, height // 2, fill="#ffffff", font=(FONT, 18, "bold"), text="Caméra inactive")
 
     def _update_alert(self, view: IncidentView | None) -> None:
