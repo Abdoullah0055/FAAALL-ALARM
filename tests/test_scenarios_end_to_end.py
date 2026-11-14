@@ -44,8 +44,12 @@ def test_annulation_avant_l_echeance_aucun_sms():
 
 
 def test_annulation_juste_apres_la_decision_d_envoyer_est_sans_effet():
+    # L'instant de soumission dépend du moment de confirmation : il est mesuré, pas supposé.
+    first = ScenarioRunner(get_scenario("chute_debout")).run(until_s=22.0)
+    incident = first.core.engine.incidents()[0]
+    submitted_s = incident.created_monotonic + incident.countdown_seconds
     runner = ScenarioRunner(get_scenario("chute_debout"))
-    runner.at(16.6, lambda run: run.core.engine.cancel())  # la soumission a eu lieu à ~16,5 s
+    runner.at(submitted_s + 0.1, lambda run: run.core.engine.cancel())
     result = runner.run(until_s=22.0)
     assert len(result.gateway.submitted_requests) == 1 and states(runner) == [IncidentState.HANDLED]
 

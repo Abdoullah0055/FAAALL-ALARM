@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .config import DetectionThresholds
@@ -11,7 +12,7 @@ from .features import BodyFeatures, compute_features
 from .model import (
     DetectionEvent, EventKind, FallCause, FrameAnalysis, FrameObservation, PersonView, Posture,
 )
-from .posture import classify_posture, is_low_arrival, is_upright
+from .posture import PostureSmoother, classify_posture, is_low_arrival, is_upright, stays_low
 from .tracking import (
     Detection, FallState, PersonTrack, PersonTracker, make_detection,
 )
@@ -34,6 +35,11 @@ class FallDetector:
     Une chute exige une descente des hanches (rapide ou lente), une posture d'arrivée basse et
     son maintien. Une posture déjà basse au démarrage ne déclenche rien : il faut d'abord observer
     une posture de départ exploitable (réarmement).
+
+    MediaPipe perd souvent une personne allongée au sol. Une suspicion survit donc à une perte de
+    pose : elle est confirmée si la pose revient basse et s'y maintient, ou si elle reste perdue
+    après une chute rapide observée jusqu'à une posture basse, loin du bord de l'image. Une pose
+    masquée n'est jamais une reprise.
     """
 
     def __init__(self, thresholds: DetectionThresholds, lying_zones: list[Rectangle] | None = None) -> None:
@@ -47,6 +53,9 @@ class FallDetector:
     ) -> list[DetectionEvent]:
         if features is None:
             return self.update_absent(track, t)
+        if track.pose_lost_since_t is not None and t - track.pose_lost_since_t > self._th.motion_max_gap_s:
+            # Le maintien au sol se mesure sur des observations : le temps masqué ne compte pas.
+            track.low_since_t = None
         track.pose_lost_since_t = None
         upright = is_upright(features, track, self._th) and posture is not Posture.LYING
         handler = {
@@ -59,20 +68,34 @@ class FallDetector:
 
     # -- images où la pose est absente ou inexploitable -------------------------------------------
     def update_absent(self, track: PersonTrack, t: float) -> list[DetectionEvent]:
-        track.upright_since_t = None
-        track.recovery_since_t = None
+        # Une image inexploitable isolée n'interrompt pas un maintien redressé (réarmement, reprise) ;
+        # une absence plus longue que `upright_break_s` le remet à zéro.
+        if t - track.last_seen_t > self._th.upright_break_s:
+            track.upright_since_t = None
+            track.recovery_since_t = None
         if track.fall_state is not FallState.SUSPECTED:
             return []
         if track.pose_lost_since_t is None:
             track.pose_lost_since_t = t
-        if t - track.pose_lost_since_t >= self._th.suspicion_pose_loss_s:
+        lost_s = t - track.pose_lost_since_t
+        # Confirmer sans voir la personne exige une descente des hanches jusqu'au sol : se baisser
+        # vite derrière un meuble puis disparaître fait descendre les hanches d'un torse au plus.
+        landed = track.last_hip_drop_torso >= self._th.lost_confirm_min_drop_torso
+        if track.suspicion_fast and landed and not track.last_seen_near_edge and (
+                lost_s >= self._th.lost_after_fast_fall_confirm_s):
+            return [self._confirm(track, t, "chute rapide jusqu'au sol puis pose masquée")]
+        if t - (track.suspicion_started_t or t) > self._th.suspicion_timeout_s:
             return [self._clear_suspicion(track, t, "perte de pose avant confirmation", FallState.DISARMED)]
         return []
 
     def _when_disarmed(self, track, t, features, posture, upright, size):
         if not upright:
-            track.upright_since_t = None
+            if track.not_upright_since_t is None:
+                track.not_upright_since_t = t
+            if t - track.not_upright_since_t >= self._th.upright_break_s:
+                track.upright_since_t = None  # posture non redressée soutenue : le maintien repart de zéro
             return []
+        track.not_upright_since_t = None
         if track.upright_since_t is None:
             track.upright_since_t = t
         if t - track.upright_since_t >= self._th.rearm_hold_s:
@@ -84,46 +107,89 @@ class FallDetector:
         drop_torso, descent_start_t = self._hip_drop(track, t, features)
         if drop_torso < self._th.min_hip_drop_torso or not is_low_arrival(features, track, self._th):
             return []
-        if any(_point_in_zone(features.hip_center_px, zone, size) for zone in self.lying_zones):
-            track.fall_state = FallState.DISARMED  # s'allonger sur le lit ou le canapé est normal
+        # Chute rapide : basculement rapide juste avant l'arrivée basse. S'asseoir au bord du lit en
+        # se penchant puis s'allonger enchaîne deux gestes séparés par une pause : seul le dernier compte.
+        recent_start_t = max(descent_start_t, t - self._th.fast_fall_recent_s)
+        peak_speed = track.peak_descent_speed_torso(recent_start_t, t, tipping_only=True)
+        fast = peak_speed >= self._th.falling_descent_speed_torso_per_s
+        in_zone = any(_point_in_zone(features.hip_center_px, zone, size) for zone in self.lying_zones)
+        if in_zone and peak_speed < self._th.zone_fall_descent_speed_torso_per_s:
+            # S'allonger sur le lit ou le canapé, même en s'y laissant tomber, est une descente
+            # contrôlée. Une chute franche qui finit dans le cadre d'une zone (sol juste devant le
+            # lit, zone tracée trop large) reste une chute possible.
+            track.fall_state = FallState.DISARMED
             return [DetectionEvent(
                 EventKind.RESTING_ZONE, t, (track.track_id,), posture=Posture.LYING,
                 detail="Posture allongée dans une zone de repos, aucune alerte",
             )]
         track.fall_state = FallState.SUSPECTED
         track.suspicion_started_t = t
+        track.suspicion_upright_since_t = None
+        track.suspicion_fast = fast
+        track.last_seen_low = True
+        track.last_seen_near_edge = False
+        track.last_hip_drop_torso = drop_torso
         track.descent_start_t = descent_start_t
         track.contact_t = t
         track.low_since_t = t
+        track.floor_hip_y_px.clear()
+        # Niveau du sol connu dès l'arrivée : une chute confirmée sur pose masquée garde ainsi une
+        # référence pour juger la remontée des hanches lors d'une reprise.
+        track.floor_hip_y_px.append(features.hip_center_px[1])
+        speed_text = "rapide" if fast else "lente"
         return [DetectionEvent(
             EventKind.FALL_SUSPECTED, t, (track.track_id,), posture=Posture.FALLING,
-            detail=f"descente des hanches de {drop_torso:.1f} torse, posture basse",
+            detail=f"descente {speed_text} des hanches de {drop_torso:.1f} torse, posture basse",
             contact_timestamp_s=t,
         )]
 
     def _when_suspected(self, track, t, features, posture, upright, size):
+        self._note_suspicion_evidence(track, t, features, size)
         if upright:
-            return [self._clear_suspicion(track, t, "geste terminé sans chute", FallState.ARMED)]
+            # Une seule image redressée peut venir d'une pose bruitée : le geste n'est terminé
+            # qu'après un redressement soutenu.
+            if track.suspicion_upright_since_t is None:
+                track.suspicion_upright_since_t = t
+            if t - track.suspicion_upright_since_t >= self._th.suspicion_clear_hold_s:
+                return [self._clear_suspicion(track, t, "geste terminé sans chute", FallState.ARMED)]
+            return []
+        track.suspicion_upright_since_t = None
         if t - (track.suspicion_started_t or t) > self._th.suspicion_timeout_s:
             return [self._clear_suspicion(track, t, "posture basse non maintenue", FallState.DISARMED)]
-        if not is_low_arrival(features, track, self._th):
+        if not track.last_seen_low:
             track.low_since_t = None
             return []
+        track.floor_hip_y_px.append(features.hip_center_px[1])
         if track.low_since_t is None:
             track.low_since_t = t
-        shift_x, shift_y, duration = track.hip_displacement_torso(0.5, t)
-        speed = math.hypot(shift_x, shift_y) / duration if duration > 0 else 0.0
-        if t - track.low_since_t < self._th.confirm_hold_s or speed > self._th.settle_speed_torso_per_s:
+        speed = math.hypot(*track.hip_velocity_torso(self._th.motion_window_s, t))
+        # Une chute franche (basculement rapide) est confirmée plus tôt qu'une descente lente, plus
+        # proche d'un geste volontaire : les deux maintiens sont réglés séparément.
+        hold_s = self._th.fast_fall_confirm_hold_s if track.suspicion_fast else self._th.confirm_hold_s
+        if t - track.low_since_t < hold_s or speed > self._th.settle_speed_torso_per_s:
             return []
-        track.fall_state = FallState.CONFIRMED
-        track.recovery_since_t = None
-        return [DetectionEvent(
-            EventKind.FALL_CONFIRMED, t, (track.track_id,), posture=Posture.LYING,
-            detail="posture basse maintenue", contact_timestamp_s=track.contact_t,
-        )]
+        return [self._confirm(track, t, "chute rapide, posture basse maintenue" if track.suspicion_fast
+                              else "descente lente, posture basse maintenue")]
+
+    def _note_suspicion_evidence(self, track, t, features, size) -> None:
+        """Mémorise ce que montre la dernière pose visible, utile si elle disparaît ensuite."""
+        # Près d'un bord latéral ou du haut de l'image, une pose qui disparaît peut être une personne
+        # qui sort du cadre. Le bas est exclu : une chute vers la caméra finit souvent contre ce bord.
+        x0, y0, x1, _ = features.bbox_px
+        margin_x, margin_y = self._th.frame_edge_margin_ratio * size[0], self._th.frame_edge_margin_ratio * size[1]
+        track.last_seen_near_edge = x0 <= margin_x or y0 <= margin_y or x1 >= size[0] - margin_x
+        track.last_seen_low = stays_low(features, track, self._th)
+        track.last_hip_drop_torso, _ = self._hip_drop(track, t, features)
+        # Le basculement rapide peut suivre l'arrivée basse (chute vers la caméra amorcée en se
+        # penchant) : il est pris en compte pendant toute la suspicion.
+        if not track.suspicion_fast and track.peak_descent_speed_torso(
+                t - self._th.fast_fall_recent_s, t, tipping_only=True) >= self._th.falling_descent_speed_torso_per_s:
+            track.suspicion_fast = True
 
     def _when_confirmed(self, track, t, features, posture, upright, size):
-        if not upright:
+        if not upright or not self._hips_back_up(track, features, posture):
+            if not upright and stays_low(features, track, self._th):
+                track.floor_hip_y_px.append(features.hip_center_px[1])
             track.recovery_since_t = None
             return []
         if track.recovery_since_t is None:
@@ -139,9 +205,46 @@ class FallDetector:
         )]
 
     # -- utilitaires ----------------------------------------------------------------------------
+    def _confirm(self, track: PersonTrack, t: float, reason: str) -> DetectionEvent:
+        track.fall_state = FallState.CONFIRMED
+        track.recovery_since_t = None
+        track.pose_lost_since_t = None
+        return DetectionEvent(
+            EventKind.FALL_CONFIRMED, t, (track.track_id,), posture=Posture.LYING,
+            detail=reason, contact_timestamp_s=track.contact_t,
+        )
+
+    def _hips_back_up(self, track: PersonTrack, features: BodyFeatures, posture: Posture) -> bool:
+        """Reprise : les hanches sont remontées nettement au-dessus du sol, pas seulement le torse.
+
+        À genoux ou assis au sol torse droit, les hanches restent près du sol : ce n'est pas une
+        reprise. Jambes visibles, la personne doit être debout ou en marche ; jambes masquées, la
+        remontée exigée est plus forte.
+        """
+        if not track.floor_hip_y_px:
+            return posture in (Posture.STANDING, Posture.WALKING)
+        floor_y = sorted(track.floor_hip_y_px)[len(track.floor_hip_y_px) // 2]
+        rise_torso = (floor_y - features.hip_center_px[1]) / track.scale_px()
+        if features.legs_visible:
+            return posture in (Posture.STANDING, Posture.WALKING) and rise_torso >= self._th.recovery_hip_rise_torso
+        return rise_torso >= self._th.recovery_hip_rise_hidden_legs_torso
+
     def _hip_drop(self, track: PersonTrack, t: float, features: BodyFeatures) -> tuple[float, float]:
-        """Descente maximale des hanches dans la fenêtre, en longueurs de torse, et début de la descente."""
-        window = [s for s in track.samples if s.features is not None and t - s.t <= self._th.descent_window_s]
+        """Descente maximale des hanches dans la fenêtre, en longueurs de torse, et début de la descente.
+
+        La descente se mesure par positions, éventuellement à travers une courte perte de pose
+        (`descent_max_gap_s`) : une pose qui disparaît pendant la chute ne l'efface pas.
+        """
+        window: list = []
+        newer_t = None
+        for sample in reversed(track.samples):
+            if t - sample.t > self._th.descent_window_s:
+                break
+            if newer_t is not None and newer_t - sample.t > self._th.descent_max_gap_s:
+                break
+            newer_t = sample.t
+            if sample.features is not None:
+                window.append(sample)
         if not window:
             return 0.0, t
         highest = min(window, key=lambda s: s.features.hip_center_px[1])
@@ -158,6 +261,8 @@ class FallDetector:
         track.fall_state = next_state
         track.low_since_t = None
         track.pose_lost_since_t = None
+        track.suspicion_fast = False
+        track.suspicion_upright_since_t = None
         track.upright_since_t = t if next_state is FallState.ARMED else None
         return DetectionEvent(EventKind.SUSPICION_CLEARED, t, (track.track_id,), detail=reason)
 
@@ -268,6 +373,11 @@ class CollisionDetector:
                 self._candidate = _ContactCandidate(t, pre, {i: [] for i in ids})
             return []
         candidate = self._candidate
+        if set(candidate.post_samples) != set(ids):
+            # Une trace a été remplacée pendant la fenêtre d'observation : le contact candidat ne
+            # concerne plus les mêmes personnes et ne peut pas être conclu.
+            self._candidate = None
+            return []
         for track in (first, second):
             scale = track.scale_px()
             candidate.post_samples[track.track_id].append(
@@ -353,9 +463,13 @@ class DetectionPipeline:
         thresholds: DetectionThresholds | None = None,
         monitored_zone: Rectangle | None = None,
         lying_zones: list[Rectangle] | None = None,
+        diagnostics: Callable[[dict], None] | None = None,
     ) -> None:
         self.thresholds = thresholds or DetectionThresholds()
+        # Diagnostic local, désactivé par défaut : un enregistrement par personne et par image.
+        self.diagnostics = diagnostics
         self.tracker = PersonTracker(self.thresholds)
+        self.smoother = PostureSmoother(self.thresholds)
         self.falls = FallDetector(self.thresholds, lying_zones)
         self.collisions = CollisionDetector(self.thresholds)
         self.monitored_zone = monitored_zone
@@ -365,10 +479,12 @@ class DetectionPipeline:
         self.falls.lying_zones = lying_zones
 
     def label_for(self, track_id: int) -> str:
-        track_ids = [track.track_id for track in self.tracker.tracks]
-        if len(track_ids) < 2 or track_id not in track_ids:
+        """« Personne » seule, sinon « Personne 1 » ou « Personne 2 » selon le numéro attribué à la
+        confirmation de la trace : il ne change pas quand l'autre trace est oubliée ou remplacée."""
+        tracks = {track.track_id: track for track in self.tracker.tracks if track.confirmed}
+        if len(tracks) < 2 or track_id not in tracks:
             return "Personne"
-        return f"Personne {track_ids.index(track_id) + 1}"
+        return f"Personne {tracks[track_id].slot}"
 
     def process(self, observation: FrameObservation) -> FrameAnalysis:
         t, size = observation.timestamp_s, observation.frame_size_px
@@ -377,16 +493,27 @@ class DetectionPipeline:
         pairs = self.tracker.associate(t, detections)
         matched_ids = {track.track_id for track, _ in pairs}
 
+        tentative_events: list[DetectionEvent] = []
         for track, detection in pairs:
-            analysis.events += self._update_matched_track(track, detection, t, size)
-            analysis.persons.append(PersonView(
-                track.track_id, "", track.last_posture or Posture.INDETERMINATE, detection.pose.landmarks,
-            ))
+            events = self._update_matched_track(track, detection, t, size)
+            (analysis.events if track.confirmed else tentative_events).extend(events)
+        self.tracker.confirm_tracks()
+        for track, detection in pairs:
+            if track.confirmed:
+                analysis.persons.append(PersonView(
+                    track.track_id, "", track.last_posture or Posture.INDETERMINATE, detection.pose.landmarks,
+                ))
+        # Une trace provisoire n'émet que ses événements de chute : son journal de posture attend
+        # la confirmation, une pose parasite isolée ne laisse ainsi aucune trace.
+        analysis.events += [e for e in tentative_events if e.kind is not EventKind.POSTURE_CHANGED]
         for track in self.tracker.tracks:
             if track.track_id not in matched_ids:
                 analysis.events += self._update_absent_track(track, t)
+                view = self._masked_view(track, t) if track.confirmed else None
+                if view is not None:
+                    analysis.persons.append(view)
 
-        present = [track for track in self.tracker.tracks if track.present]
+        present = [track for track in self.tracker.tracks if track.present and track.confirmed]
         analysis.events += self.collisions.update(t, present)
         analysis.events = self._attach_causes(analysis.events, t)
         for forgotten in self.tracker.expire(t):
@@ -398,14 +525,50 @@ class DetectionPipeline:
             for view in analysis.persons
         ]
         analysis.events = [self._label_event(event) for event in analysis.events]
+        if self.diagnostics is not None:
+            self._emit_diagnostics(t, len(observation.poses), len(detections), pairs, analysis)
         return analysis
+
+    def _emit_diagnostics(self, t, pose_count, kept_count, pairs, analysis) -> None:
+        """Points exploitables, indices calculés, pistes et motif des décisions (aucune image)."""
+        matched = {track.track_id: detection for track, detection in pairs}
+        for track in self.tracker.tracks:
+            detection = matched.get(track.track_id)
+            features = detection.features if detection is not None else None
+            record = {
+                "t": round(t, 3), "poses": pose_count, "poses_retenues": kept_count,
+                "piste": track.track_id, "libelle": self.label_for(track.track_id), "presente": detection is not None,
+                "etat_chute": track.fall_state.value, "posture": (track.last_posture or Posture.INDETERMINATE).value,
+                "nouvelle_piste": abs(track.created_t - t) < 1e-9,
+                "evenements": [e.kind.value for e in analysis.events if track.track_id in e.track_ids],
+            }
+            if detection is not None:
+                visible = detection.pose.landmarks[:, 2] >= self.thresholds.min_landmark_visibility
+                record["points_fiables"] = int(visible.sum())
+            if features is not None:
+                ratio = track.height_ratio(features)
+                hip_above = track.hip_above_ankles_torso(features)
+                record.update({
+                    "visibilite_tronc": round(features.core_visibility, 2),
+                    "angle_torse_deg": round(features.torso_angle_deg, 1),
+                    "torse_px": round(features.torso_length_px, 1),
+                    "torse_reference_px": round(track.reference_torso_px, 1),
+                    "ratio_hauteur": None if ratio is None else round(ratio, 2),
+                    "hanches_sur_chevilles_torse": None if hip_above is None else round(hip_above, 2),
+                    "jambes_visibles": features.legs_visible, "hauteur_fiable": features.height_reliable,
+                    "arrivee_basse": is_low_arrival(features, track, self.thresholds),
+                    "redresse": is_upright(features, track, self.thresholds),
+                })
+            self.diagnostics(record)
 
     # -- interne ----------------------------------------------------------------------------------
     def _detections(self, observation: FrameObservation) -> list[Detection]:
         size = observation.frame_size_px
         detections = []
         for pose in observation.poses:
-            detection = make_detection(pose, compute_features(pose, size, self.thresholds), size)
+            detection = make_detection(
+                pose, compute_features(pose, size, self.thresholds), size, self.thresholds.min_landmark_visibility,
+            )
             if self.monitored_zone is None or _point_in_zone(detection.center_px, self.monitored_zone, size):
                 detections.append(detection)
         return detections
@@ -415,21 +578,42 @@ class DetectionPipeline:
         if track.lost_reported:
             track.lost_reported = False
             events.append(DetectionEvent(EventKind.TRACK_RESUMED, t, (track.track_id,), detail="suivi repris"))
-        track.seed_reference(detection.features)
-        posture = classify_posture(detection.features, track, t, self.thresholds)
-        track.record(t, detection.features, posture, detection.center_px)
-        track.last_posture = posture
-        events += self._posture_event(track, posture, t)
-        events += self.falls.update_present(track, t, detection.features, posture, size)
-        # Un état posture FALLING reflète la suspicion posée pendant cette image.
+        features = detection.features
+        track.seed_reference(features)
+        # L'observation entre dans l'historique avant toute mesure : vitesse et durée portent sur
+        # les mêmes échantillons, image courante comprise.
+        sample = track.record(t, features, detection.center_px)
+        instant = classify_posture(features, track, t, self.thresholds)
+        sample.posture = instant
+        if features is not None:
+            track.update_references(t, features, instant)
+        events += self.falls.update_present(track, t, features, instant, size)
         if track.fall_state is FallState.SUSPECTED:
-            track.last_posture = Posture.FALLING
+            instant = Posture.FALLING  # la suspicion posée pendant cette image s'affiche tout de suite
+        track.last_posture = self.smoother.update(track, instant, t)
+        events += self._posture_event(track, track.last_posture, t)
         return events
+
+    def _masked_view(self, track: PersonTrack, t: float) -> PersonView | None:
+        """Personne suivie dont la pose manque sur cette image.
+
+        Une absence brève (une ou deux images perdues par MediaPipe) garde la posture affichée, pour
+        ne pas faire clignoter « Aucune personne détectée ». Au-delà, une personne en suspicion de
+        chute ou tombée reste à l'écran en « Posture indéterminée » : sa pose est masquée, ce qui
+        n'est ni une reprise ni une absence. Le squelette n'est pas redessiné (aucun point courant).
+        """
+        absence_s = t - track.last_seen_t
+        if absence_s < self.thresholds.track_lost_after_s and track.last_posture is not None:
+            return PersonView(track.track_id, "", track.last_posture, None)
+        if track.fall_state in (FallState.SUSPECTED, FallState.CONFIRMED):
+            return PersonView(track.track_id, "", Posture.INDETERMINATE, None)
+        return None
 
     def _update_absent_track(self, track: PersonTrack, t: float) -> list[DetectionEvent]:
         events: list[DetectionEvent] = []
         track.present = False
-        if t - track.last_seen_t >= self.thresholds.track_lost_after_s and not track.lost_reported:
+        if (track.confirmed and t - track.last_seen_t >= self.thresholds.track_lost_after_s
+                and not track.lost_reported):
             track.lost_reported = True
             events.append(DetectionEvent(EventKind.TRACK_LOST, t, (track.track_id,), detail="perte de suivi"))
             for other in self.tracker.tracks:

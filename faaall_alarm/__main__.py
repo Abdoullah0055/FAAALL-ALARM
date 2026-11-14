@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--check", action="store_true", help="Vérifie l'installation (Python, OpenCV, MediaPipe, eSpeak NG).")
     parser.add_argument("--voice-test", action="store_true", help="Prononce le message d'alerte, sans incident.")
     parser.add_argument("--list-scenarios", action="store_true", help="Liste les scénarios de démonstration.")
+    parser.add_argument("--diagnostic", type=Path, metavar="FICHIER",
+                        help="Écrit le diagnostic local de la vision (JSONL, sans image), ex. artifacts/diagnostic.jsonl.")
     return parser
 
 
@@ -108,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     options = AppOptions(
         video_path=args.video, camera_index=args.camera, demo_scenario=args.demo,
         demo_reply_delay_s=None if args.no_reply else args.reply_delay, demo_cancel_after_s=args.cancel_after,
-        countdown_seconds=args.countdown,
+        countdown_seconds=args.countdown, diagnostic_path=args.diagnostic,
     )
     try:
         app = MonitoringApp(options)

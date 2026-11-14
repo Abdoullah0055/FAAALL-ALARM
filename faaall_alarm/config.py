@@ -41,41 +41,88 @@ class DetectionThresholds:
     référence (distance épaules-hanches de la personne debout) pour rester valables quelle que soit
     la distance à la caméra. À calibrer sur la webcam cible."""
 
-    # Visibilité (0 à 1).
-    min_core_visibility: float = 0.5  # moyenne épaules + hanches pour exploiter une pose
-    min_landmark_visibility: float = 0.5  # point retenu dans la boîte englobante
+    # Visibilité (0 à 1). Un point sous `min_landmark_visibility` est écarté de tous les calculs.
+    pose_min_confidence: float = 0.3  # seuils MediaPipe (détection, présence, suivi) : garde les corps au sol
+    min_core_visibility: float = 0.5  # au moins une épaule et une hanche au-dessus de ce seuil
+    min_landmark_visibility: float = 0.5  # point retenu (centres, boîte englobante, jambes)
+    frame_edge_margin_ratio: float = 0.02  # boîte à moins de 2 % du bord : hauteur apparente tronquée
+
+    # Mouvement et historique.
+    motion_max_gap_s: float = 0.5  # au-delà, aucune vitesse n'est estimée à travers l'interruption
+    motion_window_s: float = 0.5  # fenêtre de la vitesse instantanée des hanches
+    speed_min_span_s: float = 0.2  # durée minimale d'une mesure de vitesse (bruit image à image)
+    walking_window_s: float = 0.8  # fenêtre du déplacement net (marche ≠ balancement)
 
     # Classement de la posture.
     lying_torso_angle_deg: float = 60.0  # inclinaison du torse par rapport à la verticale
     lying_bbox_aspect: float = 1.3  # largeur / hauteur de la boîte englobante
     lying_height_ratio: float = 0.55  # hauteur apparente / référence d'un corps couché
     sitting_thigh_vertical_ratio: float = 0.4  # (genou - hanche) verticale / torse
-    walking_speed_torso_per_s: float = 0.35  # vitesse horizontale des hanches
-    falling_descent_speed_torso_per_s: float = 2.0  # vitesse de descente des hanches
-    falling_label_hold_s: float = 1.0  # durée d'affichage de FALLING après la descente
+    sitting_min_thigh_vertical_ratio: float = -0.3  # genoux plus hauts que ça au-dessus des hanches : pas assis
+    sitting_max_torso_angle_deg: float = 45.0  # au-delà, le torse penché n'est plus « assis »
+    upright_max_torso_angle_deg: float = 30.0  # torse assez droit pour debout, marche ou assis
+    walking_speed_torso_per_s: float = 0.3  # déplacement net au sol (hanches, pieds, profondeur)
+    walking_scale_rate_per_s: float = 0.2  # variation relative de taille : marche vers ou loin de la caméra
+    walking_leg_swing_torso: float = 0.35  # alternance des chevilles sur la fenêtre : pas de marche
+    walking_max_torso_angle_deg: float = 20.0  # déplacement net compté comme marche seulement torse droit
+    walking_max_proportion_change: float = 0.15  # torse et silhouette changent ensemble (log) : marche
+    falling_descent_speed_torso_per_s: float = 2.0  # descente rapide des hanches (chute franche)
+    zone_fall_descent_speed_torso_per_s: float = 3.0  # dans une zone de repos : se laisser tomber ≠ chute
+    falling_label_min_torso_angle_deg: float = 40.0  # basculement : descente rapide ET torse incliné
+    tipping_torso_foreshortening_ratio: float = 0.7  # ... ou torse raccourci (bascule vers la caméra)
+    falling_label_max_hip_above_ankles_torso: float = 0.8  # ... ET hanches déjà près du sol (pieds visibles)
+    falling_label_hold_s: float = 0.6  # maintien de FALLING après une descente rapide basculée
+    posture_enter_s: float = 0.3  # stabilité avant d'afficher une nouvelle posture
+    posture_indeterminate_enter_s: float = 0.6  # idem pour « Posture indéterminée » (évite le clignotement)
+    posture_log_hold_s: float = 0.4  # stabilité d'une posture avant de l'inscrire au journal
+
+    # Référence de taille par personne, prise debout, pieds visibles et boîte non tronquée.
+    reference_window_s: float = 30.0  # fenêtre de la référence debout
+    reference_torso_tau_s: float = 1.5  # constante de temps du torse de référence (suit la distance)
+    reference_max_descent_speed_torso_per_s: float = 0.5  # pas de mise à jour pendant une descente
+    min_height_torso_ratio: float = 2.2  # hauteur / torse minimale d'une référence debout plausible
 
     # Chute.
-    reference_window_s: float = 30.0  # fenêtre de la hauteur de référence debout
     descent_window_s: float = 5.0  # fenêtre de mesure de la descente (inclut les affaissements lents)
+    descent_max_gap_s: float = 2.0  # une descente se mesure à travers une perte de pose plus courte
+    fast_fall_recent_s: float = 1.0  # basculement rapide pris en compte avant l'arrivée basse
     min_hip_drop_torso: float = 0.6  # descente minimale des hanches dans la fenêtre
     low_torso_angle_deg: float = 55.0  # inclinaison d'une posture d'arrivée basse
-    low_height_ratio: float = 0.45  # hauteur apparente / hauteur de référence
-    confirm_hold_s: float = 1.5  # maintien de la posture basse avant confirmation
+    low_height_ratio: float = 0.45  # hauteur apparente / référence : arrivée basse sans autre indice
+    low_bent_height_ratio: float = 0.65  # torse basculé ET hauteur sous ce ratio : arrivée basse
+    low_torso_angle_no_height_deg: float = 65.0  # torse basculé suffisant quand la hauteur est tronquée
+    low_max_hip_above_ankles_torso: float = 0.6  # pieds visibles : au-delà, accroupi ou à genoux, pas au sol
+    low_torso_foreshortening_ratio: float = 0.55  # torse / torse de référence : allongé vers la caméra
+    stay_low_torso_angle_deg: float = 45.0  # maintien au sol : torse encore incliné (entrée : 55 ou 65)
+    confirm_hold_s: float = 1.5  # maintien de la posture basse avant confirmation (descente lente)
+    fast_fall_confirm_hold_s: float = 1.0  # idem après un basculement rapide (chute franche)
     settle_speed_torso_per_s: float = 0.5  # mouvement résiduel toléré pendant le maintien
-    suspicion_pose_loss_s: float = 1.0  # perte de pose qui annule une suspicion
+    lost_after_fast_fall_confirm_s: float = 2.5  # pose perdue après une chute rapide basse : confirmation
+    lost_confirm_min_drop_torso: float = 1.1  # ... à condition que les hanches soient descendues d'autant
     suspicion_timeout_s: float = 6.0  # durée maximale d'une suspicion sans confirmation
-    posture_log_hold_s: float = 0.4  # stabilité d'une posture avant de l'inscrire au journal
+    suspicion_clear_hold_s: float = 0.4  # redressement soutenu avant de lever une suspicion
     recovery_torso_angle_deg: float = 35.0  # torse « redressé » pour la reprise
     recovery_height_ratio: float = 0.7  # hauteur apparente de reprise
+    upright_min_hip_above_ankles_torso: float = 0.8  # redressé : hanches au moins à hauteur d'assise
+    recovery_hip_rise_torso: float = 1.1  # remontée des hanches depuis le sol (à genoux ≈ 0,8)
+    recovery_hip_rise_hidden_legs_torso: float = 1.3  # idem quand les jambes ne sont pas visibles
     recovery_hold_s: float = 2.0  # maintien de la reprise avant d'annuler ou de clore
     rearm_hold_s: float = 1.0  # posture de départ exploitable avant de pouvoir détecter
+    upright_break_s: float = 0.3  # interruption (image douteuse, pose perdue) tolérée dans ce maintien
 
     # Suivi de deux personnes au plus.
     max_people: int = 2
     track_gate_torso: float = 3.0  # distance maximale d'appariement entre deux images
+    track_gate_growth_per_s: float = 2.0  # la porte s'élargit de 2 torses par seconde d'absence
+    track_gate_max_torso: float = 7.0  # largeur maximale de la porte
+    track_size_weight: float = 1.0  # pénalité d'appariement par écart de taille (log du rapport)
+    track_fall_state_bonus: float = 0.5  # avantage d'appariement d'une personne en suspicion ou tombée
+    duplicate_size_ratio: float = 0.6  # pose plus petite que 60 % d'une autre qu'elle chevauche : doublon
+    duplicate_overlap_ratio: float = 0.5  # part de sa boîte recouverte par l'autre pose pour être un doublon
+    track_confirm_hits: int = 3  # observations avant d'afficher et de compter une nouvelle trace
     track_lost_after_s: float = 0.6  # absence avant « perte de suivi »
     track_memory_s: float = 4.0  # conservation d'une trace perdue
-    confirmed_track_memory_s: float = 120.0  # idem pour une personne tombée
+    confirmed_track_memory_s: float = 120.0  # idem pour une personne tombée ou en suspicion
 
     # Collision entre deux personnes.
     contact_distance_torso: float = 0.9  # centres de corps assez proches pour un contact

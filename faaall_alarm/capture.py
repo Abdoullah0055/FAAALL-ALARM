@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -15,6 +17,7 @@ from .model import SourceKind, SourceStatus
 
 CAMERA_LOST_AFTER_S = 1.0  # échecs de lecture consécutifs avant de déclarer la caméra inactive
 CAMERA_RETRY_EVERY_S = 2.0
+MAX_SKIPPED_FRAMES = 30  # images sautées au plus par lecture quand l'analyse d'un MP4 prend du retard
 
 
 @dataclass(frozen=True)
@@ -35,37 +38,66 @@ class FrameSource(Protocol):
 
 
 class WebcamSource:
+    """Webcam lue par un fil dédié qui ne garde que l'image la plus récente.
+
+    Lire la caméra depuis le fil d'analyse laisse les images s'accumuler dans le tampon du pilote
+    pendant l'inférence : l'analyse traite alors des images de plus en plus anciennes. Ici, chaque
+    image est horodatée à sa lecture et `read()` rend la dernière, les intermédiaires sont écartées.
+    """
+
     kind = SourceKind.WEBCAM
 
-    def __init__(self, camera_index: int, clock: Clock) -> None:
+    def __init__(self, camera_index: int, clock: Clock,
+                 capture_factory: Callable[[int], cv2.VideoCapture] | None = None) -> None:
         self._index = camera_index
         self._clock = clock
+        self._factory = capture_factory or (lambda index: cv2.VideoCapture(index, cv2.CAP_DSHOW))
         self._capture = self._open()
-        self._failing_since: float | None = None
+        self._lock = threading.Lock()
+        self._new_frame = threading.Event()
+        self._latest: tuple[np.ndarray, float] | None = None
+        self._last_ok_t = self._clock.monotonic()
         self._last_retry = self._clock.monotonic()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._grab_loop, name="capture", daemon=True)
+        self._thread.start()
 
     def _open(self) -> cv2.VideoCapture:
-        return cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
+        capture = self._factory(self._index)
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # ignoré par certains pilotes : le fil reste nécessaire
+        return capture
+
+    def _grab_loop(self) -> None:
+        while not self._stopped.is_set():
+            ok, image = self._capture.read() if self._capture.isOpened() else (False, None)
+            now = self._clock.monotonic()
+            if ok and image is not None:
+                with self._lock:
+                    self._latest = (image, now)
+                    self._last_ok_t = now
+                self._new_frame.set()
+                continue
+            if now - self._last_ok_t >= CAMERA_LOST_AFTER_S and now - self._last_retry >= CAMERA_RETRY_EVERY_S:
+                self._last_retry = now
+                self._capture.release()
+                self._capture = self._open()
+            time.sleep(0.03)
 
     def read(self) -> SourceFrame:
-        now = self._clock.monotonic()
-        ok, image = self._capture.read() if self._capture.isOpened() else (False, None)
-        if ok and image is not None:
-            self._failing_since = None
-            return SourceFrame(SourceStatus.ACTIVE, image, now)
-        if self._failing_since is None:
-            self._failing_since = now
-        if now - self._failing_since < CAMERA_LOST_AFTER_S:
-            time.sleep(0.03)
+        if self._new_frame.wait(timeout=0.1):
+            with self._lock:
+                self._new_frame.clear()
+                image, timestamp = self._latest
+            return SourceFrame(SourceStatus.ACTIVE, image, timestamp)
+        with self._lock:
+            silent_s = self._clock.monotonic() - self._last_ok_t
+        if silent_s < CAMERA_LOST_AFTER_S:
             return SourceFrame(SourceStatus.ACTIVE)  # échec ponctuel toléré
-        if now - self._last_retry >= CAMERA_RETRY_EVERY_S:
-            self._last_retry = now
-            self._capture.release()
-            self._capture = self._open()
-        time.sleep(0.1)
         return SourceFrame(SourceStatus.LOST)
 
     def close(self) -> None:
+        self._stopped.set()
+        self._thread.join(timeout=1.0)
         self._capture.release()
 
 
@@ -87,17 +119,31 @@ class VideoFileSource:
         self._frame_index = 0
 
     def read(self) -> SourceFrame:
+        if self._realtime:
+            self._skip_late_frames()
         ok, image = self._capture.read()
         if not ok:
             return SourceFrame(SourceStatus.ENDED)
-        position_ms = self._capture.get(cv2.CAP_PROP_POS_MSEC)
-        timestamp = position_ms / 1000.0 if position_ms > 0 else self._frame_index / self._fps
+        timestamp = self._timestamp()
         self._frame_index += 1
         if self._realtime:
             delay = (self._started + timestamp) - self._clock.monotonic()
             if delay > 0:
                 time.sleep(delay)
         return SourceFrame(SourceStatus.ACTIVE, image, timestamp)
+
+    def _timestamp(self) -> float:
+        position_ms = self._capture.get(cv2.CAP_PROP_POS_MSEC)
+        return position_ms / 1000.0 if position_ms > 0 else self._frame_index / self._fps
+
+    def _skip_late_frames(self) -> None:
+        """En lecture réelle, saute les images déjà en retard, comme une webcam dont l'analyse est
+        lente : la latence reste bornée au lieu de s'accumuler (sans effet si l'analyse suit)."""
+        late_by_frames = (self._clock.monotonic() - self._started) * self._fps - self._frame_index
+        for _ in range(min(int(late_by_frames) - 1, MAX_SKIPPED_FRAMES)):
+            if not self._capture.grab():
+                return
+            self._frame_index += 1
 
     def close(self) -> None:
         self._capture.release()

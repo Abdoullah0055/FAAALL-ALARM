@@ -13,9 +13,11 @@ import numpy as np
 from .capture import FrameSource, VideoFileSource, WebcamSource
 from .clock import SystemClock
 from .config import (
-    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_SIMULATED, TELEGRAM_MODE, AppConfig, read_config,
+    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_SIMULATED, TELEGRAM_MODE,
+    AppConfig, DetectionThresholds, read_config,
 )
 from .core import MonitoringCore
+from .diagnostics import DiagnosticWriter
 from .integration import build_interpreter, build_sms_gateway, real_sms_allowed
 from .logbook import HistoryStore
 from .model import FrameObservation, PersonView, SourceKind, SourceStatus
@@ -37,6 +39,7 @@ class AppOptions:
     demo_cancel_after_s: float | None = None
     countdown_seconds: float | None = None
     config_path: Path | None = None
+    diagnostic_path: Path | None = None  # diagnostic local de la vision (JSONL), désactivé par défaut
 
 
 @dataclass(frozen=True)
@@ -54,14 +57,17 @@ class MonitoringApp:
         self.clock = SystemClock()
         self.config, self.source_kind = self._resolve_config_and_kind(options)
         self._estimator, self.source = self._build_source(options)
-        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="faaall")
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="faaall")  # voix, envoi, analyse
+        self.poll_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="faaall-sondage")
         history_mode = "réel" if real_sms_allowed(self.config, self.source_kind) else "simulé"
         gateway, interpreter, voice = self._build_services(self.config)
         self.core = MonitoringCore(
             self.config, self.clock, voice, gateway, interpreter,
             HistoryStore(DEFAULT_HISTORY_PATH, history_mode, self.clock), self.executor, self.source_kind,
-            services_factory=self._build_services,
+            services_factory=self._build_services, poll_executor=self.poll_executor,
         )
+        self._diagnostics = DiagnosticWriter(options.diagnostic_path) if options.diagnostic_path else None
+        self.core.pipeline.diagnostics = self._diagnostics
         self.settings_services = LocalSettings(STATE_DIR / "reglages.json", configuration())
         self.settings_backend = AppSettingsBackend(
             self.core, self.settings_services, self.source_kind,
@@ -110,7 +116,7 @@ class MonitoringApp:
             self.config = AppConfig(**{**self.config.to_dict(), "lying_zones": [list(z) for z in scenario.lying_zones]})
             video = ensure_demo_video(scenario)
             return ScenarioPoseEstimator(scenario), VideoFileSource(video, self.clock)
-        estimator = MediaPipePoseEstimator(DEFAULT_MODEL_PATH)
+        estimator = MediaPipePoseEstimator(DEFAULT_MODEL_PATH, min_confidence=DetectionThresholds().pose_min_confidence)
         if options.video_path:
             return estimator, VideoFileSource(options.video_path, self.clock)
         return estimator, WebcamSource(self.config.camera_index, self.clock)
@@ -126,6 +132,9 @@ class MonitoringApp:
         self.source.close()
         self._estimator.close()
         self.executor.shutdown(wait=False, cancel_futures=True)
+        self.poll_executor.shutdown(wait=False, cancel_futures=True)
+        if self._diagnostics is not None:
+            self._diagnostics.close()
 
     def latest(self) -> RenderState | None:
         with self._lock:
