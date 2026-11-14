@@ -26,7 +26,10 @@ def test_normal_webcam_start_selects_telegram_without_authorizing_send(monkeypat
     assert source is SourceKind.WEBCAM
     assert (config.sms_mode, config.sms_live_confirmed) == ("telegram", False)
     gateway = build_sms_gateway(config, source, ManualClock(), tmp_path, {})
-    assert gateway.submit_alert(REQUEST).status is SmsStatus.FAILED
+    assert "à activer" in gateway.check_availability().value
+    submission = gateway.submit_alert(REQUEST)
+    assert submission.status is SmsStatus.FAILED
+    assert "Enregistrer" in submission.error
     video_config, _ = app._resolve_config_and_kind(AppOptions(video_path="factice.mp4"))
     assert video_config.sms_mode == "simulated"
 

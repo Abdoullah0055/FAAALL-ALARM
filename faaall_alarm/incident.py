@@ -129,6 +129,7 @@ class IncidentView:
     contact_name: str
     camera_available: bool
     created_wall: datetime
+    sms_error: str | None = None
 
 
 def _digits(number: str) -> str:
@@ -358,7 +359,7 @@ class IncidentEngine:
                 can_close=incident.state is IncidentState.HANDLED, voice_ok=incident.voice_ok,
                 sms_status=incident.sms_status, reply=_copy_reply(incident.reply),
                 contact_name=incident.settings.contact_name, camera_available=self._camera_available,
-                created_wall=incident.created_wall,
+                created_wall=incident.created_wall, sms_error=incident.sms_error,
             )
 
     def incidents(self) -> list[Incident]:

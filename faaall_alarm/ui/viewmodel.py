@@ -38,6 +38,8 @@ def sms_status_text(view: IncidentView) -> str:
         return "SMS : envoi à l'échéance du décompte"
     if view.sms_status in (SmsStatus.TELEGRAM_ACCEPTED, SmsStatus.TELEGRAM_UNKNOWN):
         return view.sms_status.value
+    if view.sms_status is SmsStatus.FAILED and view.sms_error:
+        return f"Envoi échoué · {view.sms_error}"
     suffix = " · livraison à confirmer" if view.sms_status is SmsStatus.PENDING else ""
     return f"SMS : {view.sms_status.value}{suffix}"
 

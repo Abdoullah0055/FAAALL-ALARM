@@ -36,6 +36,7 @@ class SmsAvailability(str, Enum):
     UNVERIFIED = "SMS non vérifié"
     TELEGRAM_OPERATIONAL = "Bot Telegram accessible"
     TELEGRAM_UNAVAILABLE = "Telegram indisponible"
+    ACTIVATION_REQUIRED = "Canal réel à activer dans Réglages → SMS"
 
 
 class ReplyState(str, Enum):
