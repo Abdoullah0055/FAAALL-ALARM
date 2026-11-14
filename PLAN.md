@@ -26,12 +26,15 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 
 ## Lot 2 — Abdoullah
 
-- [ ] **SMS bidirectionnels.** Fournir un adaptateur simulé, puis intégrer Twilio pour l’envoi, le suivi de livraison et la lecture des réponses en arrière-plan. Produire le message prévu dans `PRODUCT.md` avec le prénom, l’heure locale et l’adresse. Gérer la disponibilité du service, les doublons, les résultats réseau incertains et la déduplication des réponses. Documenter la configuration avec des valeurs factices dans `.env.example`.
-- [ ] **Interprétation de la réponse via OpenRouter.** Choisir un modèle compatible avec la sortie structurée. Lui envoyer le texte utile de la réponse et fournir à Adam un état validé et un délai annoncé s’il est explicite. Tester les réponses ambiguës, négatives et correctives, ainsi que l’échec du service. Documenter les données transmises et la configuration dans `.env.example`.
-- [ ] **Page Réglages.** Créer la page Windows et ses contrôles pour la caméra, la zone surveillée, la voix, le décompte et la configuration SMS. Relier la page aux fonctions exposées par Adam pour charger, valider et appliquer la configuration. Afficher les erreurs de saisie et brancher les actions de test.
+- [x] **SMS bidirectionnels.** Adaptateurs simulé et Twilio, format de l’alerte, suivi, lecture des réponses et reprise sans renvoi. Vérifié avec transport factice. La recette téléphone reste ouverte.
+- [x] **Interprétation OpenRouter.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
+- [x] **Page Réglages autonome.** Contrôles, validation, persistance, aperçu fictif, test sonore et actions SMS. Recette Tk Windows effectuée en simulation.
+- [ ] **Branchement des Réglages et des SMS à la surveillance d’Adam.** Appliquer le [contrat d’intégration](docs/integration-lot-2.md) lorsque le moteur et l’interface du lot 1 sont disponibles.
 - [ ] **Données d’entraînement et de validation.** Trouver et documenter des jeux de données autorisés qui couvrent les chutes debout, assises et lentes, les gestes ordinaires, les collisions à deux ainsi que les croisements ou rapprochements sans collision. Annoter les personnes impliquées et les instants visibles de contact entre personnes, de début de chute et de contact au sol. Tenir un inventaire avec les sources et licences. Séparer les jeux par personne lorsque les identifiants le permettent, sinon par séquence d’origine. Remettre à Adam les données ou les modalités d’accès et les annotations. Garder les médias privés hors de Git.
-- [ ] **Page de présentation.** Créer une page web en français qui présente le public visé, la détection locale, la voix et le parcours de réponse SMS. Utiliser des exemples fictifs. Décrire le produit comme un dispositif d’appoint et distinguer les fonctions démontrées des fonctions encore en développement.
-- [ ] **Livrables produit restants.** Préparer les exemples fictifs de SMS et le scénario de démonstration. Tenir à jour les critères de `PRODUCT.md` avec les résultats de recette et signaler à Adam les écarts qui touchent son lot.
+  - [x] [Inventaire et accès](docs/corpus.md), avec trois annotations exploratoires sur séquences UR Fall.
+  - [ ] Séquences indépendantes annotées pour les affaissements lents, collisions et croisements à deux.
+- [x] **Page de présentation.** Page française et exemple interactif avec données fictives. Simulation vérifiée dans Chromium au clavier et aux largeurs de 320 à 1 280 px.
+- [x] **Livrables de démo.** Scénario Windows et terminal reproductible, [résultats de recette produit](PRODUCT.md#résultats-de-recette-du-lot-2) et passage de relais.
 
 **Livrable du lot.** Un module SMS simulable, un adaptateur Twilio prêt à vérifier sur téléphone, un interpréteur OpenRouter testé, la page Réglages, une page de présentation, un corpus documenté et les éléments de démonstration.
 

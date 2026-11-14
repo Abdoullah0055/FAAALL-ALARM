@@ -93,7 +93,7 @@ L’application mémorise la soumission par incident et par destinataire pour é
 3. **Interprétation.** Le modèle de langage analyse le texte et renvoie un état parmi **En route**, **Prise en charge confirmée**, **Indisponible** ou **À vérifier**, ainsi qu’un délai annoncé si le texte en contient un. « Je suis en route, environ 20 minutes » donne **En route** et **environ 20 minutes**. « Je suis en route » donne **En route** avec délai inconnu. « OK » seul ou une question comme « Tu es à 20 minutes ? » donne **À vérifier**. Une correction explicite comme « Finalement je ne peux pas venir » met à jour la prise en charge.
 4. **Affichage.** Sur l’écran de surveillance, le PC affiche par exemple **« Sophie a répondu. Elle est en route. Arrivée estimée dans 20 min. »**, avec l’heure de la réponse. Le délai est déclaré par le proche. S’il manque, afficher **Délai non précisé**. Si la réponse est ambiguë ou que l’analyse échoue, afficher **Réponse reçue, à vérifier**. La caméra continue d’être affichée et l’incident garde son propre état.
 
-OpenRouter reçoit uniquement le texte utile de la réponse, sans numéro, identité ni adresse issus de la configuration. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le modèle précis reste à choisir. En cas d’échec d’OpenRouter, l’écran affiche **Réponse reçue, à vérifier**. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
+OpenRouter reçoit uniquement le texte utile de la réponse, avec les numéros, noms et adresse connus masqués. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le modèle par défaut est `openai/gpt-4o-mini`, configurable avec `OPENROUTER_MODEL`. En cas d’échec d’OpenRouter, l’écran affiche **Réponse reçue, à vérifier**. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Modèle OpenRouter](https://openrouter.ai/openai/gpt-4o-mini) · [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
 
 ## 8. Interface, journal et confidentialité
 
@@ -141,6 +141,16 @@ La ligne de statut affiche **Caméra inactive** si la source ne fournit plus d�
 | Essai complet sur le poste cible | La voix est audible depuis la zone surveillée. Le téléphone convenu reçoit le SMS de test, y répond et le PC affiche la prise en charge et le délai annoncé. |
 
 Pour les essais de vision, annoter séparément le début de la chute et le contact avec le sol. Relever le délai entre le contact et la voix, les chutes manquées, les fausses alertes par heure de surveillance et les doublons. Mesurer séparément le temps de soumission du SMS et le résultat de livraison. Les cinq vidéos servent de références de démonstration. La validation utilise aussi des prises indépendantes avec plusieurs angles de chute, des postures usuelles, des occultations et des variations de lumière dans le cadrage cible.
+
+### Résultats de recette du lot 2
+
+| Scénario | Vérification |
+| --- | --- |
+| Incident fictif, annulation, réponse et délai | Réglages Windows avec aperçu fictif. L’annulation avant échéance ne crée aucune tentative. Après échéance, **Simulé** puis **En route** avec environ 20 min, ou **À vérifier** / **Indisponible** selon le texte. |
+| Panne et résultat SMS incertain, reprise, livraison | Tests avec transport Twilio factice. Un délai dépassé ou une interruption après enregistrement ne provoquent aucun renvoi. Un statut `sent` reste en attente. |
+| MP4 avec Twilio configuré | Isolation vérifiée à la frontière SMS avec configuration factice. Lecture par le moteur de vision à vérifier avec Adam. |
+| Réponses étrangères, anciennes, dupliquées, ambiguës et panne du modèle | Tests du filtrage, des horodatages, du SID et du contrat d’association. Sorties OpenRouter simulées, y compris l’échec et le refus d’un délai inventé. |
+| Poste cible | Recette commune ouverte pour la vision, l’audibilité, Twilio et le téléphone, ainsi que la qualité d’interprétation du modèle hébergé. |
 
 ## 10. Ordre de réalisation
 
