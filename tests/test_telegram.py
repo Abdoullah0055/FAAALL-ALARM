@@ -139,6 +139,9 @@ def test_restart_recovers_saved_channel_and_pairing(tmp_path, monkeypatch):
                                 {"TELEGRAM_BOT_TOKEN": TOKEN}, api)
     assert gateway.chat == 42
     assert gateway.check_availability().value == "Bot Telegram accessible"
+    page = SettingsPage.__new__(SettingsPage)
+    page.telegram = gateway.channel
+    assert "déjà associé" in page.telegram_pairing_status()
     assert not api.posts
 
 

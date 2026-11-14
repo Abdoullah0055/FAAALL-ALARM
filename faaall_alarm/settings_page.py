@@ -73,9 +73,12 @@ class SettingsPage:
 
         content = ttk.Frame(window, padding=18)
         content.pack(fill="both", expand=True)
-        ttk.Label(content, text="Réglages", font=("Segoe UI", 22, "bold")).pack(anchor="w", pady=(0, 10))
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+        ttk.Label(content, text="Réglages", font=("Segoe UI", 22, "bold")).grid(
+            row=0, column=0, sticky="w", pady=(0, 10))
         tabs = ttk.Notebook(content)
-        tabs.pack(fill="both", expand=True)
+        tabs.grid(row=1, column=0, sticky="nsew")
         camera, voice, sms, telegram, demo = (ttk.Frame(tabs, padding=14) for _ in range(5))
         for tab, label in zip((camera, voice, sms, telegram, demo),
                               ("Caméra et zones", "Voix et délai", "SMS", "Telegram", "Simulation")):
@@ -113,10 +116,9 @@ class SettingsPage:
             row=7, columnspan=2, sticky="w")
         ttk.Label(sms, text="Journal local · sms-logs.txt à la racine du projet.").grid(
             row=8, columnspan=2, sticky="w", pady=8)
-        self.telegram_status = tk.StringVar(window, "Créez un bot dédié avec @BotFather et /newbot.")
-        ttk.Label(telegram, text="Configurez TELEGRAM_BOT_TOKEN dans le fichier .env local, puis "
-                  "relancez l’application. Pour les alertes, choisissez Telegram dans l’onglet SMS "
-                  "et enregistrez les réglages.", wraplength=490, justify="left").grid(
+        self.telegram_status = tk.StringVar(window, self.telegram_pairing_status())
+        ttk.Label(telegram, text="Pour les alertes webcam, sélectionnez Telegram dans l’onglet SMS "
+                  "et cliquez sur Enregistrer les réglages en bas de la fenêtre.", wraplength=490, justify="left").grid(
                       row=0, columnspan=2, sticky="w", pady=(0, 12))
         ttk.Button(telegram, text="Associer un proche", command=self.start_telegram_pairing).grid(
             row=1, sticky="w")
@@ -145,9 +147,18 @@ class SettingsPage:
         self.demo_reply = tk.StringVar(window)
         ttk.Label(demo, textvariable=self.demo_reply, wraplength=510).grid(row=6, columnspan=2, sticky="w")
 
-        ttk.Label(content, textvariable=self.status, wraplength=545, justify="left").pack(
-            anchor="w", pady=(7, 0))
-        ttk.Button(content, text="Enregistrer les réglages", command=self.save).pack(anchor="e", pady=(6, 0))
+        ttk.Label(content, textvariable=self.status, wraplength=545, justify="left").grid(
+            row=2, column=0, sticky="w", pady=(7, 0))
+        ttk.Button(content, text="Enregistrer les réglages", command=self.save).grid(
+            row=3, column=0, sticky="e", pady=(6, 0))
+
+    def telegram_pairing_status(self):
+        try:
+            if self.telegram.chat() is not None:
+                return "Proche déjà associé. Vous pouvez envoyer un message de test."
+        except (OSError, sqlite3.Error):
+            return "Association Telegram illisible. Vérifiez le stockage local."
+        return "Configurez le jeton BotFather si nécessaire, puis cliquez sur Associer un proche."
 
     def field(self, frame, row, key, label, value, options=None):
         variable = self.fields[key] = tk.StringVar(self.window, str(value))
