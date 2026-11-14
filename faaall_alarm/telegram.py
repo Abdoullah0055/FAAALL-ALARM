@@ -1,5 +1,6 @@
 """Canal Telegram privé, avec intention durable et un lecteur par bot sur le PC."""
 
+import json
 import re
 import sqlite3
 from contextlib import closing
@@ -145,7 +146,8 @@ class TelegramChannel:
         error = None
         self.log(f"Envoi {kind} · intention enregistrée.")
         try:
-            result = self.call("sendMessage", chat_id=chat, text=text)
+            result = self.call("sendMessage", chat_id=chat, text=text,
+                               reply_markup=json.dumps({"force_reply": True}))
             message_id = result.get("message_id") if isinstance(result, dict) else None
             if type(message_id) is not int or message_id <= 0:
                 message_id = None

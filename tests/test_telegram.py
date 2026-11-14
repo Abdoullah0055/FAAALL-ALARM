@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from faaall_alarm.simulation.runner import ScenarioRunner, demo_config
 from faaall_alarm.simulation.scenarios import get_scenario
 from faaall_alarm.telegram import TelegramChannel, TelegramError, TelegramGateway
 from faaall_alarm.settings_page import SettingsPage
+from faaall_alarm.ui.viewmodel import reply_text
 from faaall_alarm.settings import configuration
 from faaall_alarm.app import AppOptions, MonitoringApp
 
@@ -179,6 +181,7 @@ def test_telegram_alert_and_test_replies_are_isolated_and_acknowledged(tmp_path)
     gateway = TelegramGateway(channel)
     result = gateway.submit_alert(REQUEST)
     assert result.status is SmsStatus.TELEGRAM_ACCEPTED
+    assert json.loads(api.posts[0]["reply_markup"][0]) == {"force_reply": True}
     assert "COLLISION" in api.posts[0]["text"][0]
     assert gateway.submit_alert(REQUEST) == result
     channel.send("test-factice", "Message de test", "test", 42)
@@ -229,10 +232,14 @@ def test_surveillance_attaches_quoted_telegram_reply(tmp_path):
     pair(channel, api)
     runner.gateway = runner.core.gateway = TelegramGateway(channel)
     runner.core.interpreter = ReplyInterpreterAdapter(None)
+    channel.send("test-precedent", "Test précédent", "test", 42)
+    runner.at(23.0, lambda run: api.update(
+        "Réponse directe ambiguë", date=int(channel.now())))
     runner.at(24.0, lambda run: api.update(
-        "OK, j’arrive dans dix minutes", date=int(channel.now())))
+        "OK, j’arrive dans dix minutes", quote=2, date=int(channel.now())))
     result = runner.run(until_s=40.0)
-    assert len(api.posts) == 1, result.log_text
+    assert len(api.posts) == 2, result.log_text
     view = result.core.engine.view()
     assert view.sms_status is SmsStatus.TELEGRAM_ACCEPTED
     assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 10)
+    assert "Arrivée estimée dans 10 min" in reply_text(view)
