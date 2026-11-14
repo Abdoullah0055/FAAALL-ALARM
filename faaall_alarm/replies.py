@@ -70,7 +70,7 @@ _UNAVAILABLE = re.compile(
     r"(?:finalement[ ,]+)?je (?:ne )?(?:peux|pourrai) pas (?:venir|passer|me déplacer)[.!]?"
 )
 _ON_WAY = re.compile(
-    r"(?:je suis en route|j'arrive|je pars)(?:[ ,]+(?:et )?"
+    r"(?:ok[ ,]+)?(?:je suis en route|j'arrive|je pars)(?:[ ,]+(?:et )?"
     r"(?:j'arrive )?(?:dans )?(?:environ )?\d+ (?:min(?:ute)?s?))?[.!]?"
 )
 _CONFIRMED = re.compile(r"(?:je m'en occupe|je prends en charge)[.!]?")
@@ -83,7 +83,8 @@ _CONTINUATION = re.compile(r"\b(?:mais|pourtant|peut-être|si|j'espère)\b")
 
 
 def _normalise(text: str) -> str:
-    return " ".join(text.casefold().replace("’", "'").split())
+    text = " ".join(text.casefold().replace("’", "'").split())
+    return re.sub(r"\bdix(?= min(?:ute)?s?\b)", "10", text)
 
 
 def _explicit_delays(text: str) -> set[int]:

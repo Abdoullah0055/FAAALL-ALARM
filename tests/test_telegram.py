@@ -95,7 +95,7 @@ class FakeTelegram:
         self.updates.append({"update_id": len(self.updates) + 1, "message": {
             "chat": {"id": chat, "type": kind}, "from": {"id": chat},
             "text": text, "date": self.now if date is None else date,
-            "reply_to_message": {"message_id": quote},
+            **({"reply_to_message": {"message_id": quote}} if quote is not None else {}),
         }})
 
 
@@ -230,9 +230,9 @@ def test_surveillance_attaches_quoted_telegram_reply(tmp_path):
     runner.gateway = runner.core.gateway = TelegramGateway(channel)
     runner.core.interpreter = ReplyInterpreterAdapter(None)
     runner.at(24.0, lambda run: api.update(
-        "Je suis en route, j’arrive dans environ 20 minutes", quote=1, date=int(channel.now())))
+        "OK, j’arrive dans dix minutes", date=int(channel.now())))
     result = runner.run(until_s=40.0)
     assert len(api.posts) == 1, result.log_text
     view = result.core.engine.view()
     assert view.sms_status is SmsStatus.TELEGRAM_ACCEPTED
-    assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 20)
+    assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 10)

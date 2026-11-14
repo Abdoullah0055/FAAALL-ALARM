@@ -204,22 +204,28 @@ class TelegramChannel:
             self.log("Association · commande Démarrer reçue sans code valide.")
         quoted = message.get("reply_to_message")
         reference = quoted.get("message_id") if isinstance(quoted, dict) else None
-        if type(reference) is not int or body.startswith("/"):
-            if not body.startswith("/"):
-                self.log("Réception · message ignoré, aucune alerte citée.")
+        if body.startswith("/"):
             return
         with closing(self._connect()) as db:
-            row = db.execute("""
-                SELECT kind, incident, submitted FROM alerts WHERE bot = ? AND chat = ? AND message = ?
-            """, (self.bot_id, chat_id, reference)).fetchone()
+            if quoted is None:
+                candidates = db.execute("""
+                    SELECT kind, incident, submitted, message FROM alerts
+                    WHERE bot = ? AND chat = ? AND submitted >= ? AND submitted < ?
+                    LIMIT 2
+                """, (self.bot_id, chat_id, date - REPLY_SECONDS, date + 1)).fetchall()
+                row = candidates[0] if len(candidates) == 1 and candidates[0][3] else None
+            else:
+                row = db.execute("""
+                    SELECT kind, incident, submitted FROM alerts WHERE bot = ? AND chat = ? AND message = ?
+                """, (self.bot_id, chat_id, reference)).fetchone()
         if row and int(row[2]) <= date <= row[2] + REPLY_SECONDS and date <= self.now():
-            self.log(f"Réception {row[0]} · réponse rattachée au message cité.")
+            self.log(f"Réception {row[0]} · réponse rattachée.")
             self.pending[str(update_id)] = (row[0], IncomingSms(
                 f"telegram:{self.bot_id}:{update_id}", str(chat_id), self.bot_id, body,
                 datetime.fromtimestamp(date, timezone.utc), row[1],
             ), row[2] + REPLY_SECONDS)
         else:
-            self.log("Réception · message cité inconnu ou réponse hors délai.")
+            self.log("Réception · message sans alerte identifiable ou réponse hors délai.")
 
     def _save_cursor(self):
         if self.pending or self.next_offset is None:
