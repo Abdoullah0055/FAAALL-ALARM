@@ -4,7 +4,7 @@
 
 FAAALL-ALARM est une application Windows qui surveille une zone intérieure avec une webcam fixe. Lorsqu’elle détecte une chute probable, elle affiche une alerte et fait parler l’ordinateur. Si personne n’annule dans le délai prévu, elle prévient un proche par SMS.
 
-**L’écran du PC est le cœur du produit.** Il affiche la détection, déclenche la voix enregistrée et montre la réponse du proche. Le SMS prévient le proche même si la personne au sol ne peut pas atteindre l’ordinateur. Le proche peut répondre dans la conversation SMS avec ses propres mots, et l’ordinateur affiche la confirmation et le délai annoncé.
+**L’écran du PC est le cœur du produit.** Il affiche la détection, déclenche la voix de synthèse locale et montre la réponse du proche. Le SMS prévient le proche même si la personne au sol ne peut pas atteindre l’ordinateur. Le proche peut répondre dans la conversation SMS avec ses propres mots, et l’ordinateur affiche la confirmation et le délai annoncé.
 
 Le premier public visé est une personne surveillée dans une pièce avec son accord, un proche qui accepte de recevoir les SMS et la personne qui configure le poste. Ces deux derniers rôles peuvent être remplis par la même personne.
 
@@ -18,26 +18,26 @@ Le premier public visé est une personne surveillée dans une pièce avec son ac
 | `fall_detection_example_advanced.mp4` | Le compte à rebours est visible. La personne reste au sol alors que le statut repasse au vert, puis une seconde alerte apparaît. | Garder un seul incident actif jusqu’à une reprise de posture observée ou une clôture manuelle. |
 | `fall_detection_system_with_ai_and_computer_vision_.mp4` | Le squelette et les journaux montrent des indices de posture et de mouvement. Un identifiant change autour d’une chute. | Conserver l’incident même si le suivi attribue un nouvel identifiant. |
 
-Ces références guident le comportement attendu. La voix enregistrée et le dialogue par SMS avec le proche constituent les ajouts propres à FAAALL-ALARM.
+Ces références guident le comportement attendu. La voix locale et le dialogue par SMS avec le proche constituent les ajouts propres à FAAALL-ALARM.
 
 ## 3. Périmètre de la première version
 
 | Inclus | Paramètres de départ |
 | --- | --- |
-| Surveillance sur un ordinateur Windows | Une webcam fixe, une pièce, une personne suivie à la fois. Le corps et le sol doivent être visibles dans la zone surveillée. |
+| Surveillance sur un ordinateur Windows | Une webcam fixe et une pièce. Suivi de deux personnes au maximum pour distinguer une chute individuelle d’une collision. Les corps et le sol doivent être visibles dans la zone surveillée. |
 | Détection locale | Python, OpenCV pour lire la caméra ou un fichier, MediaPipe Pose pour repérer le corps. Le traitement des images reste sur le PC. |
 | Interface locale en français | Aperçu de la caméra, état de la surveillance, fenêtre d’alerte, compte à rebours, réponse du proche et historique. |
-| Alerte vocale | Enregistrement français d’une voix humaine au format WAV, fourni à la configuration et lu sur les haut-parleurs du PC. |
+| Alerte vocale | Texte prononcé en français sur le PC par eSpeak NG, un moteur gratuit de synthèse non neuronale qui fonctionne hors ligne. [Documentation eSpeak NG](https://github.com/espeak-ng/espeak-ng) |
 | Alerte à distance | Un proche configuré et un numéro Twilio compatible avec l’envoi et la réception de SMS. Activation volontaire des SMS réels. |
-| Interprétation de la réponse | Un modèle de langage traite la réponse libre en français et extrait l’engagement du proche et son délai estimé. |
+| Interprétation de la réponse | Un modèle de langage via OpenRouter traite la réponse libre en français et extrait l’engagement du proche et son délai estimé. |
 | Mode test | Relecture de MP4, simulation d’incident et de réponse du proche. Les SMS simulés sont distincts dans l’interface et le journal. |
 
-Les caméras multiples, le suivi simultané de plusieurs personnes, la reconnaissance faciale, les commandes vocales, l’application mobile et l’appel automatique aux services d’urgence restent hors périmètre. La surveillance est prévue comme dispositif d’appoint. Elle exige un poste allumé et éveillé ainsi qu’une caméra opérationnelle.
+Les caméras multiples, le suivi de plus de deux personnes, la reconnaissance faciale, les commandes vocales, l’application mobile et l’appel automatique aux services d’urgence restent hors périmètre. La surveillance est prévue comme dispositif d’appoint. Elle exige un poste allumé et éveillé ainsi qu’une caméra opérationnelle.
 
 ## 4. Mise en route
 
 1. Choisir la webcam et contrôler dans l’aperçu qu’elle voit le sol et une personne debout en entier. Délimiter la zone surveillée et, si elle en contient, repérer les surfaces normales où l’on s’allonge, comme le lit ou le canapé. Une chute qui se termine au sol à côté d’un meuble doit rester détectable.
-2. Choisir le fichier de voix et utiliser **Tester le son** pour vérifier le volume depuis la zone surveillée. L’enregistrement peut dire « Une chute possible a été détectée. Si tout va bien, appuyez sur Annuler l’alerte. »
+2. Configurer la synthèse vocale française et utiliser **Tester le son** pour vérifier l’intelligibilité et le volume depuis la zone surveillée. Exemple de message « Une chute possible a été détectée. Si tout va bien, appuyez sur Annuler l’alerte. »
 3. Configurer le prénom de la personne surveillée, l’adresse d’intervention, le nom et le numéro international du proche et le numéro Twilio. Utiliser la simulation pour vérifier le message, le compte à rebours et l’affichage d’une réponse. Une action distincte permet d’envoyer un SMS de test au destinataire convenu.
 4. Activer la surveillance. L’interface indique la source, l’état de la caméra, la disponibilité de la voix et le mode SMS **Simulé** ou **Réel**. Une panne d’une sortie d’alerte reste visible sans bloquer l’autre.
 
@@ -52,6 +52,12 @@ MediaPipe fournit des points du corps et des indices de visibilité. FAAALL-ALAR
 
 Les seuils de vitesse, d’inclinaison, de visibilité et de persistance doivent être calibrés sur la webcam cible. La vitesse est un indice parmi d’autres. Une descente lente et continue terminée au sol constitue un scénario de validation à part entière.
 
+### Distinguer une chute d’une collision
+
+Suivre les deux trajectoires avec des identifiants temporaires et sans reconnaître les visages. Une chute individuelle peut se produire même si un témoin est présent. Une collision probable exige des indices concordants sur plusieurs images, comme la convergence des trajectoires, un contact apparent suivi d’un changement de mouvement chez au moins une des personnes. Une proximité ou un chevauchement des silhouettes à l’image ne suffit pas. Si les indices ne permettent pas de trancher, indiquer **Cause indéterminée** et conserver une chute probable si les critères de chute sont remplis.
+
+Afficher et journaliser séparément la chute individuelle et la collision probable. Une collision sans chute détectée ne déclenche pas le SMS de chute. Une collision suivie d’une chute suit le même décompte et se traite comme un seul incident, même si les deux personnes tombent. L’écran peut l’indiquer par **Collision probable · chute possible**. Si les deux personnes sont tombées, une reprise de posture automatique n’annule ou ne clôt l’incident que si elle est observée pour les deux.
+
 ## 6. Cycle d’un incident
 
 | État | Entrée et comportement | Transition |
@@ -59,7 +65,7 @@ Les seuils de vitesse, d’inclinaison, de visibilité et de persistance doivent
 | **Surveillance** | La caméra est analysée sans incident actif. L’interface distingue une pose exploitable, une personne absente ou masquée et une caméra indisponible. | Des indices concordants ouvrent une suspicion. |
 | **Suspicion** | Le système observe les images suivantes pour voir si la posture basse se maintient. | Des indices persistants confirment la chute probable. Un geste terminé sans chute ou des indices insuffisants mettent fin à la suspicion. |
 | **Chute probable** | Création d’un identifiant d’incident. L’interface affiche l’alerte, lance la voix une fois et démarre un délai de **10 secondes par défaut**, configurable. | Une annulation manuelle ou une reprise de posture normale, fiable et soutenue avant l’échéance annule le SMS. À l’échéance, le système soumet le SMS en mode réel ou consigne une simulation en mode test. |
-| **Alerte traitée** | L’interface indique l’état du SMS et, séparément, la réponse du proche ou l’attente d’une réponse. L’incident reste ouvert. | Une reprise de posture soutenue de la personne suivie ou **Clore l’incident** termine l’incident. La réponse du proche met à jour son statut de prise en charge. |
+| **Alerte traitée** | L’interface indique l’état du SMS et, séparément, la réponse du proche ou l’attente d’une réponse. L’incident reste ouvert. | Une reprise de posture soutenue de chaque personne tombée ou **Clore l’incident** termine l’incident. La réponse du proche met à jour son statut de prise en charge. |
 | **Alerte annulée** | Aucun SMS automatique n’est envoyé si l’annulation intervient avant la soumission. L’incident annulé reste consigné. | Le détecteur se réarme après une reprise soutenue de la posture. Une clôture manuelle reste possible. |
 
 La disparition du squelette, la perte de la caméra ou la fermeture de la fenêtre d’alerte ne valent ni annulation ni rétablissement. Si la caméra se coupe pendant une alerte confirmée, le compte à rebours continue et l’écran signale la panne. Une panne caméra hors incident ne déclenche pas de SMS de chute. Le décompte se base sur le temps écoulé, indépendamment de la cadence d’analyse.
@@ -68,11 +74,13 @@ Une personne qui reste au sol ne crée pas de nouvel incident à chaque image. A
 
 ## 7. Voix, SMS et erreurs
 
-**Voix.** La lecture locale démarre avec le compte à rebours et n’interrompt pas la surveillance. Le bouton **Tester le son** fonctionne sans déclencher d’incident. Un fichier absent ou illisible entraîne un état **Voix indisponible**. Le compte à rebours visuel et l’envoi SMS restent utilisables.
+**Voix.** La synthèse locale démarre avec le compte à rebours et n’interrompt pas la surveillance. Le bouton **Tester le son** fonctionne sans déclencher d’incident. Si le moteur ou la voix française est indisponible, afficher **Voix indisponible**. Le compte à rebours visuel et l’envoi SMS restent utilisables.
 
 **SMS sortant.** Le message utilise le prénom et l’adresse configurés et l’heure locale de l’incident au format `HH:mm`. Exemple avec une adresse fictive.
 
 > ALERTE : MARIE EST TOMBÉE À 14:32 à 123, rue Exemple, Montréal !
+
+Si le prénom configuré ne peut pas être associé avec certitude à la personne qui a chuté, utiliser une formulation sans prénom. Pour une collision suivie d’une chute, le SMS peut indiquer « ALERTE : COLLISION ET CHUTE POSSIBLES À 14:32 à 123, rue Exemple, Montréal ! »
 
 Le PC envoie le texte au fournisseur, sans image ni vidéo. L’interface affiche **Simulé**, **En attente**, **Livré**, **Échec** ou **Livraison inconnue** selon les informations disponibles. Le retour initial du fournisseur indique une soumission, et l’état **Livré** exige un statut de livraison explicite de Twilio. Une livraison confirmée ne renseigne pas sur la prise en charge par le proche. [États des messages Twilio](https://www.twilio.com/docs/messaging/api/message-resource)
 
@@ -85,11 +93,13 @@ L’application mémorise la soumission par incident et par destinataire pour é
 3. **Interprétation.** Le modèle de langage analyse le texte et renvoie un état parmi **En route**, **Prise en charge confirmée**, **Indisponible** ou **À vérifier**, ainsi qu’un délai annoncé si le texte en contient un. « Je suis en route, environ 20 minutes » donne **En route** et **environ 20 minutes**. « Je suis en route » donne **En route** avec délai inconnu. « OK » seul ou une question comme « Tu es à 20 minutes ? » donne **À vérifier**. Une correction explicite comme « Finalement je ne peux pas venir » met à jour la prise en charge.
 4. **Affichage.** Sur l’écran de surveillance, le PC affiche par exemple **« Sophie a répondu. Elle est en route. Arrivée estimée dans 20 min. »**, avec l’heure de la réponse. Le délai est déclaré par le proche. S’il manque, afficher **Délai non précisé**. Si la réponse est ambiguë ou que l’analyse échoue, afficher **Réponse reçue, à vérifier**. La caméra continue d’être affichée et l’incident garde son propre état.
 
-Le modèle traite uniquement le texte de la réponse. Son rôle est de l’interpréter. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le choix du modèle reste à faire. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
+OpenRouter reçoit uniquement le texte utile de la réponse, sans numéro, identité ni adresse issus de la configuration. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le modèle précis reste à choisir. En cas d’échec d’OpenRouter, l’écran affiche **Réponse reçue, à vérifier**. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
 
 ## 8. Interface, journal et confidentialité
 
 L’écran de surveillance comporte deux colonnes et aucun en-tête global.
+
+Utiliser **Personne** pour désigner la personne suivie et **Personne 1** et **Personne 2** s’il y en a deux. Le prénom configuré reste utilisable dans le SMS sortant. La page **Réglages** permet de modifier la configuration et de tester la voix et le canal SMS.
 
 | Emplacement | Contenu |
 | --- | --- |
@@ -112,6 +122,9 @@ La ligne de statut affiche **Caméra inactive** si la source ne fournit plus d�
 | --- | --- |
 | Chute simulée vers le sol depuis la position debout ou assise, avec maintien au sol | L’application ouvre un incident, joue la voix une fois et affiche le compte à rebours. Le SMS est soumis à l’échéance si les alertes réelles sont actives. |
 | Affaissement lent suivi d’un maintien au sol | Les séquences de recette annotées déclenchent chacune un incident, même en l’absence d’un pic de vitesse. Le délai de détection est relevé séparément. |
+| Une personne tombe seule alors qu’un témoin est visible | L’écran indique une chute individuelle si les observations permettent d’écarter la collision. |
+| Deux personnes se heurtent avec ou sans chute | La collision probable est distinguée d’une chute individuelle. Avec chute, un seul incident d’alerte suit le décompte et peut envoyer un SMS. Sans chute, la collision est journalisée sans SMS de chute. |
+| Deux personnes se croisent ou l’image masque le contact | Le croisement ordinaire ne produit pas de collision. Si une chute est détectée alors que le contact est incertain, l’alerte s’ouvre avec **Cause indéterminée**. |
 | Marche, assise ordinaire, accroupissement, se pencher, se coucher normalement et personne déjà allongée au démarrage | Aucun incident dans ces scénarios de recette. |
 | Annulation manuelle ou reprise de posture fiable avant la fin du compte à rebours | Le décompte s’arrête, aucune soumission n’est effectuée et l’issue est journalisée. |
 | Occlusion temporaire ou changement d’identifiant après confirmation | Le décompte continue. L’incident conserve son identifiant et la voix ne recommence pas. |
@@ -132,6 +145,6 @@ Pour les essais de vision, annoter séparément le début de la chute et le cont
 ## 10. Ordre de réalisation
 
 1. **Vision locale.** Lire les fichiers de référence et la webcam, afficher la pose et journaliser les indices. Rejouer les chutes et les gestes ordinaires avant de régler les seuils.
-2. **Incident et voix.** Relier la confirmation à la fenêtre d’alerte, au compte à rebours et à la voix enregistrée. Vérifier l’annulation, le réarmement et les pertes de suivi.
+2. **Incident et voix.** Relier la confirmation à la fenêtre d’alerte, au compte à rebours et à la voix de synthèse locale. Vérifier l’annulation, le réarmement et les pertes de suivi.
 3. **SMS sortants.** Brancher la simulation, puis l’envoi et le suivi de livraison. Valider les pannes réseau et l’absence de doublons.
 4. **Réponse du proche.** Simuler des réponses libres, vérifier leur rattachement et l’affichage, puis valider l’aller-retour sur le téléphone convenu.

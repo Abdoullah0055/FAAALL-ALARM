@@ -21,7 +21,7 @@ Ces consignes s’appliquent à tout le dépôt FAAALL-ALARM. Lis [PRODUCT.md](P
 
 ## Collaboration et passage de relais
 
-- Lis [PLAN.md](PLAN.md) avant de commencer et identifie le lot concerné. Adam, avec Claude, porte le backend et l’interface Windows. Abdoullah porte le module SMS, l’interprétation des réponses, la page de présentation, la préparation du corpus et les autres livrables prévus par le plan. Si une tâche touche les deux lots, répartissez les changements et vérifiez qui possède chaque partie avant de modifier les fichiers communs.
+- Lis [PLAN.md](PLAN.md) avant de commencer et identifie le lot concerné. Adam, avec Claude, porte le backend et l’écran de surveillance Windows. Abdoullah porte la page Réglages, le module SMS et OpenRouter, la page de présentation, la préparation du corpus et les autres livrables prévus par le plan. Si une tâche touche les deux lots, répartissez les changements et vérifiez qui possède chaque partie avant de modifier les fichiers communs.
 - Avant de modifier un fichier ou de faire un commit, vérifie la branche avec `git branch --show-current`. Si le résultat est `main` ou si aucune branche n’est active, crée ou rejoins une branche de travail. Ne développe et ne commite jamais directement sur `main`. Intègre les changements sur `main` par une PR, sauf exception explicitement demandée pour la publication d’un changement déjà préparé sur une branche.
 - Nomme ta branche `plan/<collaborateur>/<tache>`. Exemples pour commencer un lot : `plan/adam/demarrage` et `plan/abdoullah0055/demarrage`. Utilise le nom d’utilisateur GitHub lorsqu’il est connu. Choisis ensuite un nom qui décrit la tâche, comme `plan/abdoullah0055/sms-twilio`.
 - Ouvre une PR ciblée. Indique le lot, les changements, les dépendances et les vérifications. Fais relire par l’autre personne les changements qui touchent son lot ou le contrat commun. Après mise à jour avec la branche principale, relance les vérifications de l’intégration concernée.
@@ -41,7 +41,7 @@ Par exemple, pour le module SMS, Abdoullah documente comment le moteur d’incid
 
 ## Périmètre et responsabilités du code
 
-Le premier parcours utilise Python, OpenCV et MediaPipe Pose sous Windows, avec une webcam fixe et une personne suivie. Une chute probable déclenche un message humain préenregistré en français sur le PC. Le système prévient un proche par SMS Twilio si l’alerte reste active à la fin du délai.
+Le premier parcours utilise Python, OpenCV et MediaPipe Pose sous Windows, avec une webcam fixe et jusqu’à deux personnes suivies. Une chute probable déclenche une synthèse vocale française locale sur le PC. Le système prévient un proche par SMS Twilio si l’alerte reste active à la fin du délai.
 
 | Partie | Responsabilité |
 | --- | --- |
@@ -52,13 +52,14 @@ Le premier parcours utilise Python, OpenCV et MediaPipe Pose sous Windows, avec 
 | Interprétation des réponses | Extraire la prise en charge et le délai annoncé à partir du texte du proche. |
 | Interface et historique | Afficher la posture actuelle, l’alerte active, la réponse du proche et le journal de détection. Transmettre les actions de l’utilisateur et consigner les événements utiles localement. |
 
-Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de détection et le cycle d’incident doivent pouvoir être exercés avec des observations, une horloge et des sorties de test. L’inférence, la lecture du WAV et les appels réseau ne doivent pas bloquer l’interface ni le décompte.
+Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de détection et le cycle d’incident doivent pouvoir être exercés avec des observations, une horloge et des sorties de test. L’inférence, la synthèse vocale et les appels réseau ne doivent pas bloquer l’interface ni le décompte.
 
 ## Détection et états d’incident
 
 - Évalue une transition sur plusieurs observations. Combine la descente des épaules ou des hanches, le basculement du torse et la persistance d’une posture basse. Prends en compte la visibilité des points et le cadrage. Une seule image, un cadre horizontal ou une posture allongée ne suffisent pas à ouvrir un incident.
 - Calcule le mouvement selon le temps écoulé et l’échelle du corps. Utilise les horodatages du fichier pour analyser un MP4 et une horloge monotone en direct. Gère les images irrégulières et les interruptions sans estimer une vitesse à travers une longue perte de pose. Réserve l’heure civile à l’affichage et à l’historique.
 - Préserve les cas de chute depuis une chaise et d’affaissement lent. Les zones où l’on s’allonge normalement aident à interpréter une posture. Vérifie qu’une chute vers le sol à côté d’un lit ou d’un canapé reste détectable.
+- Suis séparément jusqu’à deux trajectoires pour distinguer la chute individuelle, la collision probable et la cause indéterminée. La présence d’un témoin ou le chevauchement à l’image ne suffit pas pour classer une collision. Conserve l’alerte si la chute est détectée et que la cause reste indéterminée. Une collision ouvre au plus un incident de chute, même si les deux personnes tombent. Dans ce cas, exige une reprise fiable pour chacune avant d’annuler ou de clore automatiquement.
 - Attribue un identifiant d’incident au moment où la chute probable est confirmée. Il reste stable si un identifiant de suivi change. Une pose masquée ou une caméra indisponible est un état distinct d’une reprise de posture.
 - Démarre une fois le décompte de **10 secondes par défaut**, réglable. Il continue si la caméra se coupe après confirmation. Hors incident, une panne caméra produit un statut de surveillance indisponible. Fermer la fenêtre d’alerte ne vaut pas annulation.
 - Sérialise la décision d’envoyer et celle d’annuler dans le moteur d’incident. Si une annulation manuelle ou une reprise de posture fiable et soutenue est enregistrée avant l’échéance et avant la soumission, bloque l’envoi. Lorsque la soumission a commencé, expose l’état réel du SMS et permets la clôture locale.
@@ -66,7 +67,7 @@ Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de 
 
 ## Voix et SMS
 
-- Lis un WAV français préenregistré une seule fois à l’ouverture d’un incident. Le test sonore agit uniquement sur l’audio. Si le son échoue, affiche **Voix indisponible** et poursuis le décompte. Si le SMS échoue, l’alerte locale reste disponible.
+- Prononce l’alerte une seule fois en français avec eSpeak NG, localement et sans service distant. Le test sonore agit uniquement sur l’audio. Si le moteur, la voix ou le son est indisponible, affiche **Voix indisponible** et poursuis le décompte. Si le SMS échoue, l’alerte locale reste disponible.
 - Fais de **Simulé** le mode par défaut. La lecture MP4, la simulation d’incident et les tests automatisés restent sans envoi réel, même si des identifiants Twilio existent. Applique cette règle à la frontière d’envoi et vérifie-la dans les tests. Le mode réel exige une activation explicite et une configuration valide.
 - N’envoie jamais de SMS réel depuis un outil de développement ou une recette d’agent sans demande explicite pour cet envoi et destinataire convenu. Dans l’application, le bouton de test SMS réel est distinct de la simulation et du test sonore.
 - Soumets une seule fois par incident et par destinataire. Enregistre durablement l’intention d’envoi avant l’appel réseau pour qu’un autre traitement ne puisse pas le répéter. En cas de délai réseau dépassé ou de redémarrage laissant un doute après cette étape, conserve l’état incertain et évite un renvoi automatique. Enregistre l’identifiant fournisseur dès qu’il est disponible et utilise-le pour consulter le statut.
@@ -76,6 +77,7 @@ Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de 
 
 - Pour le prototype Windows, privilégie la lecture périodique de l’API Messages Twilio en arrière-plan. Filtre les messages entrants par contact, numéro Twilio et date, puis déduplique par identifiant de message. Si un webhook est ajouté, valide `X-Twilio-Signature` avec le SDK avant de traiter le contenu. Garde la réception distincte des statuts de livraison.
 - Associe la réponse dans le moteur d’incident avant d’appeler l’IA. Vérifie l’expéditeur configuré, le destinataire, l’heure réelle du message et l’existence d’une alerte soumise. Les réponses en retard ou ambiguës ne doivent pas être affectées automatiquement à un autre incident. Une réponse plus ancienne reçue hors ordre ne remplace pas une mise à jour plus récente.
+- Utilise le modèle configuré via OpenRouter pour interpréter les réponses. Documente les données transmises et les options dans `.env.example` et garde la clé dans la configuration locale hors de Git. Si OpenRouter est indisponible, conserve **Réponse reçue, à vérifier**.
 - Traite le SMS entrant comme du texte externe. Donne au modèle uniquement le texte à interpréter, sans numéros ni adresse de configuration. Valide une sortie structurée composée d’un état autorisé et d’un délai optionnel explicitement annoncé. Les questions, les négations, les messages contradictoires et les échecs d’analyse doivent être traités. Si un modèle distant est retenu, documente les données envoyées à ce fournisseur.
 - Affiche sur l’écran de détection l’état du proche, le délai annoncé s’il est connu et l’heure de réception. En cas de lecture ou d’interprétation indisponible, indique-le à l’écran. Un SMS entrant ne ferme pas l’incident et ne modifie pas la détection ni la voix locale.
 
@@ -83,6 +85,7 @@ Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de 
 
 - Suis la disposition de `PRODUCT.md`. Garde la prédiction de posture en haut de la colonne droite et les logs en bas. Le panneau d’alerte au milieu apparaît uniquement pendant un incident avec une alerte active. Quand il se replie, les logs récupèrent sa place.
 - Affiche la posture fournie par le moteur de détection. Les libellés de posture comme `STANDING`, `WALKING` et `FALLING` reprennent les vidéos de référence. Affiche un état explicite quand la posture est indéterminée ou qu’aucune personne n’est détectée. La prédiction de posture et l’état de l’incident restent indépendants.
+- Désigne les personnes suivies par **Personne**, ou **Personne 1** et **Personne 2**, sur l’écran de surveillance. Réserve le prénom configuré au champ de configuration et au SMS quand son attribution est fiable.
 - Horodate les entrées du journal de détection et garde leur ordre. En mode MP4, indique aussi le temps dans le fichier pour les événements associés aux images. Branche **Tout copier** sur le journal filtré des données sensibles de la session entière, indépendamment des lignes visibles. Affiche une confirmation après écriture dans le presse-papiers.
 
 ## Données locales
@@ -98,9 +101,9 @@ Avant de modifier un comportement, identifie le scénario de `PRODUCT.md` corres
 
 | Partie touchée | Vérification attendue |
 | --- | --- |
-| Détection ou seuils | Tester des chutes debout, assises et lentes, ainsi que la marche, l’assise, l’accroupissement, le lit et la perte de pose. Utiliser les MP4 de référence pour rejouer les situations et des séquences indépendantes pour évaluer le résultat. |
+| Détection ou seuils | Tester les chutes debout, assises et lentes, les gestes ordinaires et la perte de pose. Vérifier aussi la chute avec témoin, les collisions avec ou sans chute, le croisement sans contact et le contact incertain sur des séquences indépendantes. |
 | Décompte, annulation ou réarmement | Tester l’échéance, l’annulation juste avant et après la décision d’envoi, la perte caméra après confirmation, le changement de suivi, le maintien au sol et la chute suivante. Vérifier qu’aucun doublon n’est créé. |
-| Voix, SMS ou configuration | Vérifier un WAV absent, un SMS refusé, un envoi réseau au résultat inconnu et une confirmation de livraison. Vérifier que le mode simulation reste isolé du fournisseur, avec une configuration SMS valide factice. |
+| Voix, SMS ou configuration | Vérifier la voix locale hors ligne, le moteur de synthèse indisponible, un SMS refusé, un résultat réseau inconnu et une confirmation de livraison. Vérifier que le mode simulation reste isolé du fournisseur, avec une configuration SMS valide factice. |
 | Réponse SMS et IA | Simuler un trajet avec et sans délai, un « OK » ambigu, une négation, une correction, un échec du modèle, un expéditeur inattendu, un doublon et une réponse tardive. Vérifier l’association à l’incident et la notification. Le test sur téléphone couvre aussi le SMS retour. |
 | Interface ou périphériques | Vérifier la prédiction affichée, le repli du panneau d’alerte au repos et la copie des logs horodatés hors écran. Vérifier que les actions restent visibles pendant le décompte et les pannes. La recette sur le poste cible confirme le cadrage, la voix audible et, si l’envoi a été autorisé, la réception sur le téléphone convenu. |
 
