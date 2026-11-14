@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlsplit
 
@@ -14,6 +15,7 @@ from faaall_alarm.adapters import ReplyInterpreterAdapter
 from faaall_alarm.simulation.runner import ScenarioRunner, demo_config
 from faaall_alarm.simulation.scenarios import get_scenario
 from faaall_alarm.telegram import TelegramChannel, TelegramError, TelegramGateway
+from faaall_alarm.settings_page import SettingsPage
 
 
 NOW = 1_800_000_000
@@ -21,6 +23,31 @@ TOKEN = "123:token_factice"
 WHEN = datetime.fromtimestamp(NOW, timezone.utc)
 REQUEST = AlertRequest("incident-factice", WHEN, FallCause.COLLISION, "Marie",
                        "123 rue Exemple", "", "")
+
+
+def test_settings_can_send_another_test_before_receiving_a_reply(tmp_path, monkeypatch):
+    channel, api = channel_and_api(tmp_path)
+    pair(channel, api)
+    page = SettingsPage.__new__(SettingsPage)
+    scheduled = []
+    page.window = SimpleNamespace(after=lambda delay, callback: scheduled.append(callback))
+    page.backend = SimpleNamespace(allows_telegram_test=True)
+    page.telegram = channel
+    page.telegram_busy = False
+    page.telegram_test = None
+    page.telegram_status = SimpleNamespace(set=lambda value: None)
+    page.run_telegram = lambda operation, completed: completed(operation())
+    monkeypatch.setattr("faaall_alarm.settings_page.messagebox.askyesno", lambda *args, **kwargs: True)
+
+    page.send_telegram_test()
+    first = page.telegram_test
+    page.send_telegram_test()
+    second = page.telegram_test
+
+    assert len(api.posts) == 2
+    assert first[0] != second[0]
+    scheduled[0]()
+    assert page.telegram_test is second
 
 
 class FakeTelegram:

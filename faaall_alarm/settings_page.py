@@ -342,7 +342,7 @@ class SettingsPage:
         self.telegram_status.set("Proche associé. Choisissez Telegram et enregistrez les réglages.")
 
     def send_telegram_test(self):
-        if self.telegram_busy or self.telegram_test:
+        if self.telegram_busy:
             return
         if not getattr(self.backend, "allows_telegram_test", True):
             self.telegram_status.set("Le test Telegram réel est indisponible en lecture MP4 ou en démo.")
@@ -351,6 +351,7 @@ class SettingsPage:
                                    parent=self.window, default="no"):
             return
         self.telegram_busy = True
+        self.telegram_test = None
         self.telegram_status.set("Envoi du message de test…")
         incident = f"test-{uuid4()}"
 
@@ -366,12 +367,15 @@ class SettingsPage:
             self.telegram_status.set(submission.error or submission.status.value)
             if submission.provider_ref:
                 self.telegram_test = (incident, chat, submission.submitted_at)
-                self.window.after(2000, self.poll_telegram_test)
+                test = self.telegram_test
+                self.window.after(2000, lambda: self.poll_telegram_test(test))
 
         self.run_telegram(send, sent)
 
-    def poll_telegram_test(self):
-        incident, chat, since = self.telegram_test
+    def poll_telegram_test(self, test):
+        if self.telegram_test is not test:
+            return
+        incident, chat, since = test
         if (datetime.now(timezone.utc) - since) >= REPLY_WINDOW:
             self.telegram_test = None
             self.telegram_status.set("Délai de réponse au test écoulé.")
@@ -391,13 +395,19 @@ class SettingsPage:
             return interpretation
 
         def checked(interpretation):
+            if self.telegram_test is not test:
+                return
             if interpretation is None:
-                self.window.after(3000, self.poll_telegram_test)
+                self.window.after(3000, lambda: self.poll_telegram_test(test))
             else:
                 self.telegram_test = None
                 self.telegram_status.set(f"Réponse au test · {interpretation.label()}")
 
-        self.run_telegram(check, checked)
+        def failed(error):
+            if self.telegram_test is test:
+                self.telegram_error(error)
+
+        self.run(check, checked, lambda: None, on_error=failed)
 
     def check_sms(self):
         settings = self.sms_settings()

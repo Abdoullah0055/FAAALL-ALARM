@@ -53,6 +53,8 @@ Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests n
 
 Le PC et le téléphone ont besoin d’Internet. Telegram reçoit le texte de l’alerte, dont l’adresse d’intervention, et héberge les réponses du proche. **Accepté par Telegram** indique que l’API a accepté le message. La notification et la lecture se vérifient sur l’iPhone. Le jeton et les textes restent hors des journaux.
 
+Tu peux relancer le test sans attendre de réponse. Chaque confirmation envoie un message et l’onglet suit la réponse au dernier test envoyé.
+
 Pour diagnostiquer l’association ou un envoi, ouvre `telegram-logs.txt` à la racine du projet après l’essai. Ce fichier local, ignoré par Git, exclut les codes d’association, identifiants de chat et réponses brutes.
 
 ### Twilio
