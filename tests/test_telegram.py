@@ -82,6 +82,20 @@ def test_pairing_expiration_and_bot_change(tmp_path):
     assert TelegramChannel(channel.database, "124:other", api).chat() is None
 
 
+def test_telegram_log_records_pairing_and_refusal_without_private_values(tmp_path):
+    channel, api = channel_and_api(tmp_path)
+    channel.log_path = tmp_path / "telegram-logs.txt"
+    pair(channel, api)
+    api.failure = ServiceError(403)
+    channel.send("test-factice", "Texte privé factice", "test", 42)
+    log = channel.log_path.read_text(encoding="utf-8")
+    assert "code reçu et validé" in log
+    assert "proche confirmé" in log
+    assert "sendMessage · échec · HTTP 403" in log
+    assert "Texte privé factice" not in log and TOKEN not in log
+    assert all(message["message"]["text"] not in log for message in api.updates)
+
+
 def test_telegram_alert_and_test_replies_are_isolated_and_acknowledged(tmp_path):
     channel, api = channel_and_api(tmp_path)
     pair(channel, api)

@@ -13,10 +13,12 @@ from urllib.parse import urlencode
 from .http import ServiceError, request_json
 from .model import FallCause
 from .sms import Alert
+from .sms_log import SMS_LOG_PATH, write_sms_log
 from .sms_contract import IncomingSms, SmsAvailability, SmsStatus, SmsSubmission
 
 TOKEN = re.compile(r"[0-9]+:[A-Za-z0-9_-]+")
 REPLY_SECONDS = 1800
+TELEGRAM_LOG_PATH = SMS_LOG_PATH.with_name("telegram-logs.txt")
 
 
 class TelegramError(Exception):
@@ -24,7 +26,7 @@ class TelegramError(Exception):
 
 
 class TelegramChannel:
-    def __init__(self, database, token, transport=request_json, now=time):
+    def __init__(self, database, token, transport=request_json, now=time, log_path=None):
         self.database = database
         self.token = token
         self.transport = transport
@@ -35,6 +37,11 @@ class TelegramChannel:
         self.pending = {}
         self.next_offset = None
         self.bot_id = token.partition(":")[0]
+        self.log_path = log_path
+
+    def log(self, event):
+        if self.log_path is not None:
+            write_sms_log(self.log_path, "Telegram", event)
 
     def _connect(self):
         self.database.parent.mkdir(parents=True, exist_ok=True)
@@ -58,17 +65,26 @@ class TelegramChannel:
 
     def call(self, method, **fields):
         if not TOKEN.fullmatch(self.token):
+            self.log(f"{method} · jeton manquant ou format invalide.")
             raise TelegramError("Renseignez TELEGRAM_BOT_TOKEN avec le jeton BotFather.")
         try:
             response = self.transport(
                 f"https://api.telegram.org/bot{self.token}/{method}",
                 {"Content-Type": "application/x-www-form-urlencoded"}, urlencode(fields).encode(),
             )
+        except ServiceError as error:
+            detail = f"HTTP {error.status}" if error.status is not None else error.reason
+            self.log(f"{method} · échec · {detail}.")
+            raise
         except (OSError, ValueError):
+            self.log(f"{method} · erreur de transport ou de décodage.")
             raise ServiceError() from None
         if response.get("ok") is not True:
             status = response.get("error_code")
+            self.log(f"{method} · refus Telegram · code {status if type(status) is int else 'absent'}.")
             raise ServiceError(status if type(status) is int else None)
+        if method != "getUpdates":
+            self.log(f"{method} · réponse acceptée par l’API.")
         return response.get("result")
 
     def chat(self):
@@ -88,11 +104,13 @@ class TelegramChannel:
             code = token_urlsafe(24)
             self.challenge = (code, self.now() + 600)
             self.candidate = None
+            self.log("Association · lien généré, attente de Démarrer (10 minutes).")
             return f"https://t.me/{username}?start={code}"
 
     def pairing_ready(self):
         with self.lock:
             if not self.challenge or self.challenge[1] <= self.now():
+                self.log("Association · lien expiré.")
                 raise TelegramError("Lien expiré. Relancez l’association.")
             self._poll()
             return self.candidate is not None
@@ -104,9 +122,11 @@ class TelegramChannel:
             with closing(self._connect()) as db, db:
                 db.execute("INSERT OR REPLACE INTO pairing VALUES (?, ?)", (self.bot_id, self.candidate))
             self.challenge = self.candidate = None
+            self.log("Association · proche confirmé sur le PC.")
 
     def send(self, incident, text, kind, chat):
         if chat is None or not TOKEN.fullmatch(self.token):
+            self.log("Envoi bloqué · bot ou proche non configuré.")
             return SmsSubmission(SmsStatus.FAILED, error="Associez un proche dans Réglages → Telegram.")
         attempted = self.now()
         submitted = datetime.fromtimestamp(attempted, timezone.utc)
@@ -114,6 +134,7 @@ class TelegramChannel:
             claim = db.execute("INSERT OR IGNORE INTO alerts VALUES (?, ?, ?, ?, ?, NULL, ?)",
                                (self.bot_id, chat, incident, kind, attempted, SmsStatus.TELEGRAM_UNKNOWN))
         if claim.rowcount != 1:
+            self.log("Envoi ignoré · intention déjà enregistrée.")
             with closing(self._connect()) as db:
                 message, state, timestamp = db.execute(
                     "SELECT message, state, submitted FROM alerts WHERE bot = ? AND incident = ?",
@@ -122,6 +143,7 @@ class TelegramChannel:
                                  submitted_at=datetime.fromtimestamp(timestamp, timezone.utc))
         message_id = None
         error = None
+        self.log(f"Envoi {kind} · intention enregistrée.")
         try:
             result = self.call("sendMessage", chat_id=chat, text=text)
             message_id = result.get("message_id") if isinstance(result, dict) else None
@@ -137,6 +159,7 @@ class TelegramChannel:
         with closing(self._connect()) as db, db:
             db.execute("UPDATE alerts SET message = ?, state = ? WHERE bot = ? AND incident = ?",
                        (message_id, state, self.bot_id, incident))
+        self.log(f"Envoi {kind} · {state.value}.")
         return SmsSubmission(state, f"telegram:{message_id}" if message_id else None, error, submitted)
 
     def _poll(self):
@@ -175,20 +198,28 @@ class TelegramChannel:
         if self.challenge and self.now() < self.challenge[1] and body == f"/start {self.challenge[0]}":
             if self.candidate is None:
                 self.candidate = chat_id
+                self.log("Association · code reçu et validé, attente de la confirmation sur le PC.")
             return
+        if self.challenge and body.startswith("/start"):
+            self.log("Association · commande Démarrer reçue sans code valide.")
         quoted = message.get("reply_to_message")
         reference = quoted.get("message_id") if isinstance(quoted, dict) else None
         if type(reference) is not int or body.startswith("/"):
+            if not body.startswith("/"):
+                self.log("Réception · message ignoré, aucune alerte citée.")
             return
         with closing(self._connect()) as db:
             row = db.execute("""
                 SELECT kind, incident, submitted FROM alerts WHERE bot = ? AND chat = ? AND message = ?
             """, (self.bot_id, chat_id, reference)).fetchone()
         if row and int(row[2]) <= date <= row[2] + REPLY_SECONDS and date <= self.now():
+            self.log(f"Réception {row[0]} · réponse rattachée au message cité.")
             self.pending[str(update_id)] = (row[0], IncomingSms(
                 f"telegram:{self.bot_id}:{update_id}", str(chat_id), self.bot_id, body,
                 datetime.fromtimestamp(date, timezone.utc), row[1],
             ), row[2] + REPLY_SECONDS)
+        else:
+            self.log("Réception · message cité inconnu ou réponse hors délai.")
 
     def _save_cursor(self):
         if self.pending or self.next_offset is None:
@@ -220,12 +251,13 @@ class TelegramChannel:
             with closing(self._connect()) as db, db:
                 db.execute("INSERT OR IGNORE INTO seen VALUES (?, ?, ?)", (self.bot_id, int(key), self.now()))
             del self.pending[key]
+            self.log("Réception · réponse acquittée.")
             self._save_cursor()
 
 
 @lru_cache(maxsize=8)
 def telegram_channel(state_dir, token):
-    return TelegramChannel(state_dir / "telegram.sqlite3", token)
+    return TelegramChannel(state_dir / "telegram.sqlite3", token, log_path=TELEGRAM_LOG_PATH)
 
 
 class TelegramGateway:

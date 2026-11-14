@@ -276,6 +276,7 @@ class SettingsPage:
         write_sms_log(SMS_LOG_PATH, Source.MANUAL_SMS, event)
 
     def telegram_error(self, error):
+        self.telegram.log(f"Réglages · opération interrompue ({type(error).__name__}).")
         self.telegram_busy = False
         self.telegram_test = None
         self.telegram_link_value.set("")
@@ -331,6 +332,7 @@ class SettingsPage:
                 self.run_telegram(self.telegram.confirm_pairing, self.telegram_paired)
             else:
                 self.telegram_busy = False
+                self.telegram.log("Association · confirmation refusée sur le PC.")
                 self.telegram_status.set("Association annulée.")
 
         self.run_telegram(self.telegram.pairing_ready, checked)
