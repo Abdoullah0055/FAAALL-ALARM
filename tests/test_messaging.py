@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from faaall_alarm.demo import Demo
 from faaall_alarm.http import ServiceError
-from faaall_alarm.replies import (Care, Interpretation, OpenRouter, ReplyTarget, associate,
+from faaall_alarm.replies import (Care, Interpretation, OpenAI, ReplyTarget, associate,
                                   interpret_simulated, newer)
 from faaall_alarm.sms import Alert, Delivery, Incoming, Mode, SmsConfig, SmsService, Source
 
@@ -202,14 +202,21 @@ class ReplyTests(unittest.TestCase):
         def model(state, eta):
             def transport(url, headers, body):
                 request = json.loads(body)
-                self.assertEqual(request["model"], "modele/factice")
-                self.assertTrue(request["provider"]["require_parameters"])
-                self.assertTrue(request["response_format"]["json_schema"]["strict"])
-                self.assertNotIn("rue Exemple", request["messages"][-1]["content"])
-                self.assertNotIn("514", request["messages"][-1]["content"])
+                self.assertEqual(url, "https://api.openai.com/v1/responses")
+                self.assertEqual(headers["Authorization"], "Bearer factice")
+                self.assertEqual(request["model"], "gpt-6-luna")
+                self.assertFalse(request["store"])
+                self.assertEqual(request["reasoning"], {"effort": "none"})
+                self.assertTrue(request["text"]["format"]["strict"])
+                self.assertNotIn("rue Exemple", request["input"])
+                self.assertNotIn("514", request["input"])
                 content = json.dumps({"state": state, "eta_minutes": eta})
-                return {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
-            return OpenRouter("factice", "modele/factice", transport)
+                return {"status": "completed", "output": [
+                    {"type": "reasoning", "summary": []},
+                    {"type": "message", "role": "assistant", "status": "completed",
+                     "content": [{"type": "output_text", "text": content}]},
+                ]}
+            return OpenAI("factice", transport=transport)
 
         self.assertEqual(model(Care.ON_WAY, 20).interpret("J’arrive dans 20 minutes"),
                          Interpretation(Care.ON_WAY, 20))
@@ -228,7 +235,19 @@ class ReplyTests(unittest.TestCase):
         def offline(*args):
             raise ServiceError(503)
 
-        for model in (OpenRouter(""), OpenRouter("factice", transport=offline),
-                      OpenRouter("factice", transport=lambda *args: {"choices": []})):
+        for model in (OpenAI(""), OpenAI("factice", transport=offline),
+                      OpenAI("factice", transport=lambda *args: {"status": "completed", "output": []}),
+                      OpenAI("factice", transport=lambda *args: {"status": "incomplete", "output": []})):
             self.assertEqual(model.interpret("J’arrive dans 20 minutes"),
                              Interpretation(service_unavailable=True))
+
+    def test_openai_refusal_requires_review(self):
+        def transport(url, headers, body):
+            self.assertEqual(json.loads(body)["model"], "modele-factice")
+            return {"status": "completed", "output": [{
+                "type": "message", "role": "assistant", "status": "completed",
+                "content": [{"type": "refusal", "refusal": "Refus factice"}],
+            }]}
+
+        model = OpenAI("factice", "modele-factice", transport)
+        self.assertEqual(model.interpret("J’arrive dans 20 minutes"), Interpretation())

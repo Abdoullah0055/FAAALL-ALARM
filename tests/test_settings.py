@@ -45,3 +45,8 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(process.call_args.args[0][:5], [settings.voice_path, "-v", "fr", "-a", "65"])
             process.side_effect = FileNotFoundError
             self.assertFalse(backend.test_sound(settings))
+
+    def test_openai_settings(self):
+        self.assertEqual(LocalSettings(self.path, {}).model(), ("", "gpt-6-luna"))
+        backend = LocalSettings(self.path, {"OPENAI_API_KEY": "factice", "OPENAI_MODEL": "modele-factice"})
+        self.assertEqual(backend.model(), ("factice", "modele-factice"))

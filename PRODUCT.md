@@ -29,7 +29,7 @@ Ces références guident le comportement attendu. La voix locale et le dialogue 
 | Interface locale en français | Aperçu de la caméra, état de la surveillance, fenêtre d’alerte, compte à rebours, réponse du proche et historique. |
 | Alerte vocale | Texte prononcé en français sur le PC par eSpeak NG, un moteur gratuit de synthèse non neuronale qui fonctionne hors ligne. [Documentation eSpeak NG](https://github.com/espeak-ng/espeak-ng) |
 | Alerte à distance | Un proche configuré et un numéro Twilio compatible avec l’envoi et la réception de SMS. Activation volontaire des SMS réels. |
-| Interprétation de la réponse | Un modèle de langage via OpenRouter traite la réponse libre en français et extrait l’engagement du proche et son délai estimé. |
+| Interprétation de la réponse | Un modèle de langage via OpenAI traite la réponse libre en français et extrait l’engagement du proche et son délai estimé. |
 | Mode test | Relecture de MP4, simulation d’incident et de réponse du proche. Les SMS simulés sont distincts dans l’interface et le journal. |
 
 Les caméras multiples, le suivi de plus de deux personnes, la reconnaissance faciale, les commandes vocales, l’application mobile et l’appel automatique aux services d’urgence restent hors périmètre. La surveillance est prévue comme dispositif d’appoint. Elle exige un poste allumé et éveillé ainsi qu’une caméra opérationnelle.
@@ -93,7 +93,7 @@ L’application mémorise la soumission par incident et par destinataire pour é
 3. **Interprétation.** Le modèle de langage analyse le texte et renvoie un état parmi **En route**, **Prise en charge confirmée**, **Indisponible** ou **À vérifier**, ainsi qu’un délai annoncé si le texte en contient un. « Je suis en route, environ 20 minutes » donne **En route** et **environ 20 minutes**. « Je suis en route » donne **En route** avec délai inconnu. « OK » seul ou une question comme « Tu es à 20 minutes ? » donne **À vérifier**. Une correction explicite comme « Finalement je ne peux pas venir » met à jour la prise en charge.
 4. **Affichage.** Sur l’écran de surveillance, le PC affiche par exemple **« Sophie a répondu. Elle est en route. Arrivée estimée dans 20 min. »**, avec l’heure de la réponse. Le délai est déclaré par le proche. S’il manque, afficher **Délai non précisé**. Si la réponse est ambiguë ou que l’analyse échoue, afficher **Réponse reçue, à vérifier**. La caméra continue d’être affichée et l’incident garde son propre état.
 
-OpenRouter reçoit uniquement le texte utile de la réponse, avec les numéros, noms et adresse connus masqués. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le modèle par défaut est `openai/gpt-4o-mini`, configurable avec `OPENROUTER_MODEL`. En cas d’échec d’OpenRouter, l’écran affiche **Réponse reçue, à vérifier**. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Modèle OpenRouter](https://openrouter.ai/openai/gpt-4o-mini) · [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
+OpenAI reçoit uniquement le texte utile de la réponse, avec les numéros, noms et adresse connus masqués. La sélection de l’incident, la validation du résultat et la mise à jour de l’écran relèvent du code. Le modèle par défaut est `gpt-6-luna`, configurable avec `OPENAI_MODEL`. En cas d’échec d’OpenAI, l’écran affiche **Réponse reçue, à vérifier**. Pour l’essai de bout en bout avec le texte sortant personnalisé, prévoir un compte Twilio payant. L’essai gratuit limite les envois aux modèles de Twilio et aux destinataires vérifiés. [Modèle OpenAI](https://developers.openai.com/api/docs/models/gpt-6-luna) · [Restrictions de l’essai Twilio](https://www.twilio.com/docs/usage/trials)
 
 ## 8. Interface, journal et confidentialité
 
@@ -149,7 +149,7 @@ Pour les essais de vision, annoter séparément le début de la chute et le cont
 | Incident fictif, annulation, réponse et délai | Réglages Windows avec aperçu fictif. L’annulation avant échéance ne crée aucune tentative. Après échéance, **Simulé** puis **En route** avec environ 20 min, ou **À vérifier** / **Indisponible** selon le texte. |
 | Panne et résultat SMS incertain, reprise, livraison | Tests avec transport Twilio factice. Un délai dépassé ou une interruption après enregistrement ne provoquent aucun renvoi. Un statut `sent` reste en attente. |
 | MP4 avec Twilio configuré | Isolation vérifiée à la frontière SMS avec configuration factice. Lecture par le moteur de vision à vérifier avec Adam. |
-| Réponses étrangères, anciennes, dupliquées, ambiguës et panne du modèle | Tests du filtrage, des horodatages, du SID et du contrat d’association. Sorties OpenRouter simulées, y compris l’échec et le refus d’un délai inventé. |
+| Réponses étrangères, anciennes, dupliquées, ambiguës et panne du modèle | Tests du filtrage, des horodatages, du SID et du contrat d’association. Sorties OpenAI simulées, y compris l’échec et le refus d’un délai inventé. |
 | Poste cible | Recette commune ouverte pour la vision, l’audibilité, Twilio et le téléphone, ainsi que la qualité d’interprétation du modèle hébergé. |
 
 ## 10. Ordre de réalisation

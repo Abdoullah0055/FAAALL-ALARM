@@ -145,8 +145,8 @@ class LocalSettings:
         return result.returncode == 0
 
     def model(self) -> tuple[str, str]:
-        return (self.config.get("OPENROUTER_API_KEY") or "",
-                self.config.get("OPENROUTER_MODEL") or DEFAULT_MODEL)
+        return (self.config.get("OPENAI_API_KEY") or "",
+                self.config.get("OPENAI_MODEL") or DEFAULT_MODEL)
 
 
 def _valid_rect(rect: Rect) -> bool:

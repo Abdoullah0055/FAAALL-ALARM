@@ -1,6 +1,6 @@
 # FAAALL-ALARM — plan de réalisation
 
-Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l’interface de surveillance Windows. Abdoullah réalise la page Réglages de l’application, le système SMS avec OpenRouter pour interpréter les réponses, la page de présentation et la préparation des données.** Abdoullah prend aussi en charge les livrables de [PRODUCT.md](PRODUCT.md) qui ne relèvent pas du lot d’Adam.
+Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l’interface de surveillance Windows. Abdoullah réalise la page Réglages de l’application, le système SMS avec OpenAI pour interpréter les réponses, la page de présentation et la préparation des données.** Abdoullah prend aussi en charge les livrables de [PRODUCT.md](PRODUCT.md) qui ne relèvent pas du lot d’Adam.
 
 [PRODUCT.md](PRODUCT.md) définit le comportement attendu. [AGENTS.md](AGENTS.md) guide les agents qui modifient le dépôt. Le plan attribue les tâches et fixe l’ordre d’intégration.
 
@@ -27,7 +27,7 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 ## Lot 2 — Abdoullah
 
 - [x] **SMS bidirectionnels.** Adaptateurs simulé et Twilio, format de l’alerte, suivi, lecture des réponses et reprise sans renvoi. Vérifié avec transport factice. La recette téléphone reste ouverte.
-- [x] **Interprétation OpenRouter.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
+- [x] **Interprétation OpenAI.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
 - [x] **Page Réglages autonome.** Contrôles, validation, persistance, aperçu fictif, test sonore et actions SMS. Recette Tk Windows effectuée en simulation.
 - [ ] **Branchement des Réglages et des SMS à la surveillance d’Adam.** Appliquer le [contrat d’intégration](docs/integration-lot-2.md) lorsque le moteur et l’interface du lot 1 sont disponibles.
 - [ ] **Données d’entraînement et de validation.** Trouver et documenter des jeux de données autorisés qui couvrent les chutes debout, assises et lentes, les gestes ordinaires, les collisions à deux ainsi que les croisements ou rapprochements sans collision. Annoter les personnes impliquées et les instants visibles de contact entre personnes, de début de chute et de contact au sol. Tenir un inventaire avec les sources et licences. Séparer les jeux par personne lorsque les identifiants le permettent, sinon par séquence d’origine. Remettre à Adam les données ou les modalités d’accès et les annotations. Garder les médias privés hors de Git.
@@ -36,7 +36,7 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 - [x] **Page de présentation.** Page française et exemple interactif avec données fictives. Simulation vérifiée dans Chromium au clavier et aux largeurs de 320 à 1 280 px.
 - [x] **Livrables de démo.** Scénario Windows et terminal reproductible, [résultats de recette produit](PRODUCT.md#résultats-de-recette-du-lot-2) et passage de relais.
 
-**Livrable du lot.** Un module SMS simulable, un adaptateur Twilio prêt à vérifier sur téléphone, un interpréteur OpenRouter testé, la page Réglages, une page de présentation, un corpus documenté et les éléments de démonstration.
+**Livrable du lot.** Un module SMS simulable, un adaptateur Twilio prêt à vérifier sur téléphone, un interpréteur OpenAI testé, la page Réglages, une page de présentation, un corpus documenté et les éléments de démonstration.
 
 ## Contrat entre les deux lots
 

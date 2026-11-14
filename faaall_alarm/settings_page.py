@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from .demo import Demo
 from .http import ServiceError
-from .replies import DEMO_REPLY, OpenRouter, ReplyTarget, associate, newer
+from .replies import DEMO_REPLY, OpenAI, ReplyTarget, associate, newer
 from .settings import FULL_FRAME, LocalSettings, Settings, SettingsPort
 from .sms import Alert, Mode, POLL_SECONDS, REPLY_AMBIGUITY_WINDOW, REPLY_WINDOW, SmsService, Source
 
@@ -93,7 +93,7 @@ class SettingsPage:
         self.real_result = tk.StringVar(window, "SMS non vérifié")
         ttk.Label(sms, textvariable=self.real_result, wraplength=500, justify="left").grid(
             row=7, columnspan=2, sticky="w")
-        ttk.Label(sms, text="Configurez les identifiants Twilio et OpenRouter dans le fichier .env local.",
+        ttk.Label(sms, text="Configurez les identifiants Twilio et OpenAI dans le fichier .env local.",
                   wraplength=500).grid(row=8, columnspan=2, sticky="w", pady=8)
 
         ttk.Label(demo, text="Incident fictif", font=("Segoe UI", 15, "bold")).grid(sticky="w")
@@ -300,7 +300,7 @@ class SettingsPage:
                 if associate(message, targets) is None:
                     ambiguous = True
                 elif newer(message, response[0] if response else None):
-                    interpretation = OpenRouter(*self.services.model()).interpret(message.body, redact=redact)
+                    interpretation = OpenAI(*self.services.model()).interpret(message.body, redact=redact)
                     response = message, interpretation
             return current, response, ambiguous, read_failed
 
@@ -311,7 +311,7 @@ class SettingsPage:
                 message, interpretation = response
                 label += f"\n{message.received_at.astimezone():%H:%M:%S} · {interpretation.label()}"
                 if interpretation.service_unavailable:
-                    label += " · OpenRouter indisponible"
+                    label += " · OpenAI indisponible"
             if ambiguous:
                 label += "\nRéponse reçue, à vérifier (rattachement incertain)"
             if read_failed:

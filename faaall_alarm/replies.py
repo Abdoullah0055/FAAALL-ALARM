@@ -10,7 +10,7 @@ from .http import ServiceError, request_json
 from .sms import REPLY_AMBIGUITY_WINDOW, REPLY_WINDOW, Incoming
 
 
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_MODEL = "gpt-6-luna"
 DEMO_REPLY = "Je suis en route, j’arrive dans environ 20 minutes."
 
 
@@ -131,7 +131,7 @@ PROMPT = (
 )
 
 
-class OpenRouter:
+class OpenAI:
     def __init__(self, key: str, model: str = DEFAULT_MODEL, transport=request_json):
         self.key = key
         self.model = model
@@ -152,25 +152,32 @@ class OpenRouter:
             return Interpretation()
         request = {
             "model": self.model,
-            "provider": {"require_parameters": True},
-            "messages": [{"role": "system", "content": PROMPT},
-                         {"role": "user", "content": body}],
-            "response_format": {"type": "json_schema", "json_schema": {
-                "name": "sms_du_proche", "strict": True, "schema": SCHEMA,
+            "store": False,
+            "reasoning": {"effort": "none"},
+            "instructions": PROMPT,
+            "input": body,
+            "text": {"format": {
+                "type": "json_schema", "name": "sms_du_proche", "strict": True, "schema": SCHEMA,
             }},
         }
         try:
             result = self.transport(
-                "https://openrouter.ai/api/v1/chat/completions",
+                "https://api.openai.com/v1/responses",
                 {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
                 json.dumps(request).encode(),
             )
-            choice = result["choices"][0]
-            if choice.get("finish_reason") != "stop":
+            if result["status"] != "completed":
                 raise ValueError()
-            data = json.loads(choice["message"]["content"])
-            return self._validate(data, text, known)
-        except (ServiceError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+            parts = [
+                part for item in result["output"] if item["type"] == "message"
+                and item["role"] == "assistant" and item["status"] == "completed"
+                for part in item["content"]
+            ]
+            if any(part["type"] == "refusal" for part in parts):
+                return Interpretation()
+            output = "".join(part["text"] for part in parts if part["type"] == "output_text")
+            return self._validate(json.loads(output), text, known)
+        except (ServiceError, ValueError, TypeError, KeyError):
             return Interpretation(service_unavailable=True)
 
     @staticmethod
