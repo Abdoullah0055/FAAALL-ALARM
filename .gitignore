@@ -1,0 +1,58 @@
+# Secrets et configuration propre au poste
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+*.pfx
+*.p12
+config.local.*
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Données, médias et traces locales
+/data/
+/datasets/
+/private/
+/recordings/
+/models/
+/artifacts/
+/logs/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wav
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.sqlite*-wal
+*.sqlite*-shm
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+*.egg-info/
+
+# Dépendances et builds de la page web
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# Windows et macOS
+Thumbs.db
+Desktop.ini
+.DS_Store

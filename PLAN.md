@@ -4,6 +4,8 @@ Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l�
 
 [PRODUCT.md](PRODUCT.md) définit le comportement attendu. [AGENTS.md](AGENTS.md) guide les agents qui modifient le dépôt. Le plan attribue les tâches et fixe l’ordre d’intégration.
 
+Avant toute modification, vérifiez votre branche avec `git branch --show-current`. Pour démarrer depuis `origin/main` après un `git fetch origin`, Adam crée sa branche avec `git switch -c plan/adam/demarrage origin/main` et Abdoullah avec `git switch -c plan/abdoullah0055/demarrage origin/main`. Si la branche de la tâche existe déjà, rejoignez-la. Les commits se font sur les branches de travail et les PR les intègrent à `main`.
+
 ## Lot 1 — Adam avec Claude
 
 - [ ] **Application Windows et vision.** Créer le point d’entrée Python et documenter l’installation sous Windows avec PowerShell. Brancher OpenCV pour la webcam et les MP4, puis MediaPipe Pose. Calculer les indices de posture et de mouvement sur des images horodatées. Gérer l’absence de personne, les occultations, les pertes de caméra et la fin d’un fichier.

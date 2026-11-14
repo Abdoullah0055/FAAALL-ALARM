@@ -10,6 +10,35 @@ Ces consignes s’appliquent à tout le dépôt FAAALL-ALARM. Lis [PRODUCT.md](P
 - Utilise les commandes documentées par le dépôt. Si tu ajoutes le premier point d’entrée, documente dans le README comment installer, lancer et tester l’application sous Windows avec PowerShell. Indique la version de Python réellement vérifiée avec OpenCV et MediaPipe. Dans les commandes PowerShell, entoure de guillemets les chemins qui contiennent des espaces.
 - Déclare les dépendances dans le manifeste du projet. Pour un modèle de pose ajouté au projet, documente sa source officielle, sa version et la manière de l’installer. Garde des seuils de détection nommés, avec leurs unités et leurs valeurs par défaut, dans une configuration identifiable.
 
+## Commits et dépôt public
+
+- Fais des commits régulièrement après chaque unité de travail cohérente et vérifiée. Garde les changements indépendants dans des commits distincts et préserve les modifications déjà présentes dans le dépôt.
+- Écris un titre court et précis qui décrit le changement, par exemple `feat(sms): récupérer les réponses du proche`. Ajoute un corps si le motif, un changement de configuration ou une limite mérite une explication. Applique la même règle aux descriptions de pull requests.
+- Ajoute à l’index uniquement les fichiers du changement, en nommant leurs chemins. Avant chaque commit, contrôle la liste des fichiers et relis le diff indexé. Vérifie aussi les fichiers binaires et générés, dont le contenu peut échapper au diff. Évite les ajouts globaux par défaut.
+- Traite le code, les exemples, les tests, les logs, les captures et les messages de commit comme publics. N’y inclus jamais de jetons, clés, mots de passe, fichiers d’environnement réels, adresses, numéros personnels, SMS privés, vidéos ou voix privées, ni de données sans droit de redistribution. N’affiche pas de valeur secrète lors d’une vérification.
+- Mets `.gitignore` à jour dès que le projet crée de nouveaux fichiers locaux, privés ou générés. Vérifie les règles avec `git check-ignore` et contrôle séparément les fichiers déjà suivis. Git continue de suivre un fichier déjà indexé même après son ajout à `.gitignore`. N’utilise pas `git add -f` pour y faire entrer un fichier sensible.
+- Si tu repères un secret dans l’index, retire-le de l’index en préservant le fichier local. S’il a déjà été commité, préviens le responsable sans recopier la valeur. Fais révoquer ou renouveler un identifiant exposé et coordonne le nettoyage de l’historique si nécessaire.
+
+## Collaboration et passage de relais
+
+- Lis [PLAN.md](PLAN.md) avant de commencer et identifie le lot concerné. Adam, avec Claude, porte le backend et l’interface Windows. Abdoullah porte le module SMS, l’interprétation des réponses, la page de présentation, la préparation du corpus et les autres livrables prévus par le plan. Si une tâche touche les deux lots, répartissez les changements et vérifiez qui possède chaque partie avant de modifier les fichiers communs.
+- Avant de modifier un fichier ou de faire un commit, vérifie la branche avec `git branch --show-current`. Si le résultat est `main` ou si aucune branche n’est active, crée ou rejoins une branche de travail. Ne développe et ne commite jamais directement sur `main`. Intègre les changements sur `main` par une PR, sauf exception explicitement demandée pour la publication d’un changement déjà préparé sur une branche.
+- Nomme ta branche `plan/<collaborateur>/<tache>`. Exemples pour commencer un lot : `plan/adam/demarrage` et `plan/abdoullah0055/demarrage`. Utilise le nom d’utilisateur GitHub lorsqu’il est connu. Choisis ensuite un nom qui décrit la tâche, comme `plan/abdoullah0055/sms-twilio`.
+- Ouvre une PR ciblée. Indique le lot, les changements, les dépendances et les vérifications. Fais relire par l’autre personne les changements qui touchent son lot ou le contrat commun. Après mise à jour avec la branche principale, relance les vérifications de l’intégration concernée.
+- Coordonnez les changements de contrat avant leur intégration. Une signature, un format de données, un état ou une variable de configuration partagée doit avoir le même sens des deux côtés. Quand un changement est incompatible, documente la migration et l’ordre de fusion. Fournis un simulateur ou des exemples factices quand ils permettent à l’autre personne d’avancer en parallèle.
+- Pour chaque élément que l’autre personne doit relier, laisse un **passage de relais** dans la PR et un lien vers la documentation versionnée du contrat. Indique la personne responsable de la suite et distingue ce qui a été vérifié de ce qui reste à brancher. Le passage de relais doit permettre de reproduire le branchement sans avoir accès à la conversation d’origine.
+
+Pour un passage de relais, donne les informations suivantes lorsqu’elles s’appliquent.
+
+| Information | Détail attendu |
+| --- | --- |
+| Point de branchement | Chemin du fichier, nom et signature de la fonction ou de l’événement, et endroit exact où l’appeler. |
+| Données échangées | Exemple factice d’entrée et de sortie, champs obligatoires, unités, états possibles et erreurs à traiter. |
+| Démarrage | Dépendances, noms des variables dans `.env.example`, commandes à exécuter et ordre d’intégration si une autre PR est requise. |
+| Vérification | Commande ou étapes de recette, résultat attendu et limite connue. Pour les SMS, décris d’abord la recette en mode simulé. |
+
+Par exemple, pour le module SMS, Abdoullah documente comment le moteur d’incident d’Adam appelle l’adaptateur simulé avec un identifiant fictif, quels états l’adaptateur renvoie et comment injecter une réponse de test. Adam vérifie ensuite que l’écran affiche la réponse pour le bon incident et note le résultat dans la PR.
+
 ## Périmètre et responsabilités du code
 
 Le premier parcours utilise Python, OpenCV et MediaPipe Pose sous Windows, avec une webcam fixe et une personne suivie. Une chute probable déclenche un message humain préenregistré en français sur le PC. Le système prévient un proche par SMS Twilio si l’alerte reste active à la fin du délai.
