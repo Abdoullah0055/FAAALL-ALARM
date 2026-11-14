@@ -4,15 +4,19 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from threading import Event
+from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 from faaall_alarm.demo import Demo
-from faaall_alarm.http import ServiceError
+from faaall_alarm.http import ServiceError, request_json
 from faaall_alarm.replies import (Care, Interpretation, OpenAI, ReplyTarget, associate,
                                   interpret_simulated, newer)
 from faaall_alarm.sms import Alert, Delivery, Incoming, Mode, SmsConfig, SmsService, Source
+from faaall_alarm.settings_page import test_result_label as sms_test_label
 
 
 NOW = datetime(2026, 11, 14, 14, 32, tzinfo=timezone.utc)
@@ -27,8 +31,9 @@ class SmsTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.database = Path(directory.name) / "sms.sqlite3"
 
-    def service(self, transport, source=Source.CAMERA, config=CONFIG, now=NOW):
-        return SmsService(self.database, config, source, transport=transport, now=lambda: now)
+    def service(self, transport, source=Source.CAMERA, config=CONFIG, now=NOW, **options):
+        return SmsService(self.database, config, source, transport=transport, now=lambda: now,
+                          **options)
 
     def test_simulation_isolates_provider_even_with_valid_config(self):
         def forbidden(*args):
@@ -124,6 +129,88 @@ class SmsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.submit(ALERT)
         self.assertEqual(service.submit(ALERT, confirmed_test=True).state, Delivery.PENDING)
+
+    def test_settings_diagnostic_reports_configuration_and_rejection_without_provider_text(self):
+        incomplete = self.service(None, Source.MANUAL_SMS, replace(CONFIG, auth_token=""))
+        self.assertIn("TWILIO_AUTH_TOKEN", incomplete.check_diagnostic())
+
+        def reject(request, timeout):
+            payload = json.dumps({"code": "21608", "message": CONFIG.recipient}).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS)
+            self.assertIn("Vérification du canal · HTTP 400", service.check_diagnostic())
+            result = service.submit(ALERT, confirmed_test=True)
+        label = sms_test_label(result)
+        self.assertIn("SMS de test · Échec\nSoumission · HTTP 400 · code Twilio 21608", label)
+        self.assertNotIn(CONFIG.recipient, label)
+
+    def test_settings_diagnostic_suggests_trial_test_for_http_400_without_code(self):
+        def reject(*args):
+            raise ServiceError(400)
+
+        service = self.service(reject, Source.MANUAL_SMS)
+        label = sms_test_label(service.submit(ALERT, confirmed_test=True))
+        self.assertIn("Soumission · HTTP 400", label)
+        self.assertIn("Try out SMS", label)
+
+    def test_local_log_classifies_trial_refusal_and_recovers_code_from_documentation_url(self):
+        path = self.database.with_name("sms-logs.txt")
+
+        def reject(request, timeout):
+            payload = json.dumps({
+                "message": f"Trial account must use a predefined template for {CONFIG.recipient}",
+                "more_info": "https://www.twilio.com/docs/errors/21608",
+            }).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS, log_path=path)
+            service.submit(ALERT, confirmed_test=True)
+        log = path.read_text(encoding="utf-8")
+        self.assertIn("code Twilio 21608", log)
+        self.assertIn("modèle SMS imposé par l’essai Twilio", log)
+        self.assertNotIn(CONFIG.recipient, log)
+        self.assertNotIn("predefined template", log)
+
+    def test_settings_diagnostic_reports_delivery_error_code(self):
+        def transport(url, headers, body=None):
+            if body:
+                return {"sid": SID, "status": "queued"}
+            return {"status": "undelivered", "error_code": 30007}
+
+        service = self.service(transport, Source.MANUAL_SMS)
+        service.submit(ALERT, confirmed_test=True)
+        self.assertIn("Livraison · code Twilio 30007",
+                      sms_test_label(service.refresh(ALERT.incident_id)))
+
+    def test_local_log_reports_error_response_format_without_private_data(self):
+        path = self.database.with_name("sms-logs.txt")
+        private = (CONFIG.sender, CONFIG.recipient, CONFIG.account_sid, CONFIG.auth_token)
+
+        def reject(request, timeout):
+            payload = json.dumps({"message": " ".join(private)}).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS, log_path=path)
+            result = service.submit(ALERT, confirmed_test=True)
+        self.assertEqual(result.state, Delivery.FAILED)
+        started, failed = path.read_text(encoding="utf-8").splitlines()
+        self.assertIn("intention enregistrée", started)
+        self.assertIn("test SMS réel | Soumission · Échec · HTTP 400", failed)
+        self.assertIn("réponse JSON sans code exploitable", failed)
+        for value in private:
+            self.assertNotIn(value, started + failed)
+
+    def test_unwritable_log_does_not_change_submission_result(self):
+        service = self.service(lambda *args: {"sid": SID, "status": "queued"},
+                               log_path=self.database.parent)
+        self.assertEqual(service.submit(ALERT).state, Delivery.PENDING)
 
     def test_delivery_polling_failure_then_explicit_failure(self):
         def transport(url, headers, body=None):
