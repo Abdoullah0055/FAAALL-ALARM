@@ -1,6 +1,6 @@
-"""Raccordement des deux lots : moteur d'incident (lot 1) avec SmsService, OpenRouter et la page Réglages (lot 2).
+"""Raccordement des deux lots : moteur d'incident (lot 1) avec SmsService, OpenAI et la page Réglages (lot 2).
 
-Le transport Twilio et OpenRouter est factice : aucun réseau, aucun SMS réel, aucune clé API.
+Le transport Twilio et OpenAI est factice : aucun réseau, aucun SMS réel, aucune clé API.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from faaall_alarm.sms_contract import InterpretationUnavailable, ReplyState, Sms
 
 from .contracts import assert_gateway_contract, assert_interpreter_contract
 
-TWILIO_ENV = {"TWILIO_ACCOUNT_SID": "AC" + "0" * 32, "TWILIO_AUTH_TOKEN": "jeton-factice", "OPENROUTER_API_KEY": "cle-factice"}
+TWILIO_ENV = {"TWILIO_ACCOUNT_SID": "AC" + "0" * 32, "TWILIO_AUTH_TOKEN": "jeton-factice", "OPENAI_API_KEY": "cle-factice"}
 SENT_SID, REPLY_SID = "SM" + "a" * 32, "SM" + "b" * 32
 
 
@@ -88,21 +88,25 @@ class FakeTwilio:
         return {"messages": messages, "next_page_uri": None}
 
 
-def test_chemin_reel_avec_transports_factices_envoi_livraison_reponse_et_openrouter(tmp_path):
+def test_chemin_reel_avec_transports_factices_envoi_livraison_reponse_et_openai(tmp_path):
     live = demo_config(sms_mode="live", sms_live_confirmed=True)
     runner = ScenarioRunner(get_scenario("chute_debout"), config=live, source_kind=SourceKind.WEBCAM)
     twilio = FakeTwilio(runner.clock)
     now = lambda: runner.clock.wall().astimezone(timezone.utc)  # noqa: E731
     runner.gateway = runner.core.gateway = build_sms_gateway(
         live, SourceKind.WEBCAM, runner.clock, tmp_path, TWILIO_ENV, twilio, now=now)
-    openrouter_bodies = []
+    openai_bodies = []
 
-    def openrouter(url, headers, body=None):
-        openrouter_bodies.append(body.decode())
+    def openai(url, headers, body=None):
+        assert url == "https://api.openai.com/v1/responses"
+        openai_bodies.append(body.decode())
         content = json.dumps({"state": "En route", "eta_minutes": 20})
-        return {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
+        return {"status": "completed", "output": [{
+            "type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": content}],
+        }]}
 
-    runner.core.interpreter = build_interpreter(live, SourceKind.WEBCAM, TWILIO_ENV, openrouter)
+    runner.core.interpreter = build_interpreter(live, SourceKind.WEBCAM, TWILIO_ENV, openai)
     runner.at(24.0, lambda run: setattr(twilio, "reply_available", True))
     result = runner.run(until_s=40.0)
     assert len(twilio.posts) == 1 and "ALERTE" in twilio.posts[0].replace("+", " ").upper()
@@ -110,11 +114,12 @@ def test_chemin_reel_avec_transports_factices_envoi_livraison_reponse_et_openrou
     view = result.core.engine.view()
     assert view.sms_status is SmsStatus.DELIVERED  # statut de livraison explicite relu par le suivi
     assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 20)
-    prompt_data = json.loads(openrouter_bodies[0])["messages"][1]["content"]
-    assert prompt_data.startswith("Je suis en route") and DEMO_CONTACT_NUMBER not in openrouter_bodies[0]
+    request = json.loads(openai_bodies[0])
+    assert request["model"] == "gpt-6-luna" and request["store"] is False
+    assert request["input"].startswith("Je suis en route") and DEMO_CONTACT_NUMBER not in openai_bodies[0]
 
 
-def test_openrouter_en_panne_affiche_reponse_a_verifier(tmp_path):
+def test_openai_en_panne_affiche_reponse_a_verifier(tmp_path):
     live = demo_config(sms_mode="live", sms_live_confirmed=True)
 
     def panne(url, headers, body=None):

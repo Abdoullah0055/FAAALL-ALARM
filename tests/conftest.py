@@ -17,7 +17,7 @@ from faaall_alarm.simulation.scenarios import Scenario, get_scenario
 from faaall_alarm.sms_contract import AlertRequest
 
 # Les tests ne dépendent d'aucun SMS réel : aucune configuration Twilio ne doit servir ici.
-for variable in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "OPENROUTER_API_KEY"):
+for variable in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "OPENAI_API_KEY"):
     os.environ.pop(variable, None)
 
 

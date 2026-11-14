@@ -4,7 +4,7 @@ Application Windows de surveillance par webcam fixe. Elle détecte une chute pro
 
 Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartition du travail dans [PLAN.md](PLAN.md), le raccordement des deux lots dans [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md) et le contrat du lot 2 dans [docs/integration-lot-2.md](docs/integration-lot-2.md).
 
-**État de la V1.** Les lots 1 et 2 sont raccordés : capture, détection, incidents, voix et écran de surveillance (lot 1) pilotent le service SMS Twilio, l'interpréteur OpenRouter et la page Réglages (lot 2). Le SMS est **simulé par défaut**. Le chemin réel (Twilio, OpenRouter) est vérifié avec des transports factices seulement : l'essai sur téléphone reste à faire.
+**État de la V1.** Les lots 1 et 2 sont raccordés : capture, détection, incidents, voix et écran de surveillance (lot 1) pilotent le service SMS Twilio, l'interpréteur OpenAI et la page Réglages (lot 2). Le SMS est **simulé par défaut**. Des transports factices exercent le parcours Twilio et OpenAI. L’essai sur téléphone reste à faire.
 
 ## Versions vérifiées
 
@@ -42,11 +42,13 @@ Si l'exécution de scripts est bloquée : `powershell -ExecutionPolicy Bypass -F
 
 Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests ne peuvent jamais envoyer de SMS réel, même avec des identifiants Twilio valides. Le mode réel exige `sms_mode = live`, l'activation explicite dans les réglages et une vraie webcam.
 
-## Réglages, SMS réel et OpenRouter
+## Réglages, SMS réel et OpenAI
 
 Le bouton **Réglages** ouvre la page du lot 2 : caméra et zones, voix, décompte, SMS (mode **Simulé** ou **Réel**) et simulation d'incident. Les réglages sont enregistrés dans `config.local.json` et s'appliquent au moteur en cours : le décompte, les numéros et les services valent pour les nouveaux incidents.
 
-Pour le mode réel, copie `.env.example` en `.env` et renseigne sur le poste `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OPENROUTER_API_KEY` (et `OPENROUTER_MODEL` si besoin). Choisis ensuite **Réel** dans l'onglet **SMS** et utilise **Vérifier le canal**. L'envoi d'un SMS réel exige en plus une vraie webcam : la lecture d'un MP4 et la démo restent simulées. Procédure d'essai réel avec le téléphone convenu : [docs/integration-lot-2.md](docs/integration-lot-2.md). La recette SMS du lot 2 seule : `python -m faaall_alarm --sms-recipe`.
+Pour le mode réel, copie `.env.example` en `.env` et renseigne sur le poste `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OPENAI_API_KEY` (et `OPENAI_MODEL` si besoin). Choisis ensuite **Réel** dans l'onglet **SMS** et utilise **Vérifier le canal**. L'envoi d'un SMS réel exige en plus une vraie webcam : la lecture d'un MP4 et la démo restent simulées. Procédure d'essai réel avec le téléphone convenu : [docs/integration-lot-2.md](docs/integration-lot-2.md). La recette SMS du lot 2 seule : `python -m faaall_alarm --sms-recipe`.
+
+Crée la clé sur la plateforme OpenAI. Le modèle par défaut est `gpt-6-luna`. L’API Responses reçoit le texte utile du SMS associé avec les coordonnées connues masquées et `store: false`. [Créer une clé API](https://platform.openai.com/api-keys) · [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
 
 Commandes de l'écran : **Squelette** (affiche le squelette), **Historique** (événements locaux, avec effacement), **Réglages**. **Tout copier** copie tout le journal horodaté de la session, données sensibles masquées.
 
@@ -81,7 +83,7 @@ Les tests n'utilisent ni webcam, ni Internet, ni SMS réel, ni délai réel de d
 | `faaall_alarm/sms_contract.py`, `sms_simulated.py`, `integration.py` | Contrat avec le module SMS, substituts simulés, frontière d'envoi réel |
 | `faaall_alarm/voice.py` | eSpeak NG (français, hors ligne) |
 | `faaall_alarm/config.py`, `settings_backend.py` | Seuils nommés, réglages, lecture/validation/application, backend de la page Réglages |
-| `faaall_alarm/sms.py`, `replies.py`, `settings.py`, `settings_page.py`, `http.py` | Lot 2 : Twilio, OpenRouter, page Réglages (voir [docs/integration-lot-2.md](docs/integration-lot-2.md)) |
+| `faaall_alarm/sms.py`, `replies.py`, `settings.py`, `settings_page.py`, `http.py` | Lot 2 : Twilio, OpenAI, page Réglages (voir [docs/integration-lot-2.md](docs/integration-lot-2.md)) |
 | `faaall_alarm/adapters.py` | Adaptateurs entre les types du lot 2 et les protocoles du moteur d'incident |
 | `faaall_alarm/core.py`, `app.py`, `ui/` | Assemblage, fil d'analyse, écran Tkinter |
 | `faaall_alarm/simulation/` | Scénarios de mannequins, rendu MP4, démo |

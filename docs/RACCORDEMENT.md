@@ -1,6 +1,6 @@
 # Raccordement des lots 1 et 2
 
-Le [contrat du lot 2](integration-lot-2.md) est appliqué : le moteur d'incident (lot 1) pilote `SmsService`, `OpenRouter` et la page Réglages d'Abdoullah. Ce document dit où chaque point est branché, ce qui a été vérifié et ce qui reste à faire.
+Le [contrat du lot 2](integration-lot-2.md) est appliqué : le moteur d'incident (lot 1) pilote `SmsService`, `OpenAI` et la page Réglages d'Abdoullah. Ce document dit où chaque point est branché, ce qui a été vérifié et ce qui reste à faire.
 
 ## Où est branché chaque élément
 
@@ -13,7 +13,7 @@ Le [contrat du lot 2](integration-lot-2.md) est appliqué : le moteur d'incident
 | `refresh(incident_id)` toutes les 5 s, `check()` | `MonitoringCore.poll_background` ([core.py](../faaall_alarm/core.py)), sur le pool de fils de travail. L'écran démarre à **SMS non vérifié**, puis affiche le résultat de `check()`. |
 | `poll_replies(since)` puis `acknowledge_reply(sid)` | `SmsServiceGateway.fetch_replies` ; `core` acquitte après la décision de rattachement. |
 | `associate`, fenêtres de 30 min et de 24 h | Le moteur applique les mêmes règles (`handle_incoming_sms`) : expéditeur et destinataire, heure strictement postérieure à la tentative dans les 30 min, autre soumission dans les 24 h précédant la réponse → **Réponse reçue, à vérifier**, doublon par identifiant, réponse plus ancienne ignorée. Les numéros et le décompte sont figés à l'ouverture de l'incident. |
-| `interpret_simulated(body)` / `OpenRouter(key, model).interpret(body, redact=...)` | `build_interpreter`. OpenRouter n'est utilisé que si le SMS réel est autorisé ; la démo, les MP4 et les tests utilisent les règles hors ligne. Le texte seul est transmis, avec prénom, nom du proche, adresse et numéros masqués. Une panne ou un refus donne **Réponse reçue, à vérifier**. |
+| `interpret_simulated(body)` / `OpenAI(key, model).interpret(body, redact=...)` | `build_interpreter`. OpenAI n'est utilisé que si le SMS réel est autorisé ; la démo, les MP4 et les tests utilisent les règles hors ligne. Le texte seul est transmis, avec prénom, nom du proche, adresse et numéros masqués. Une panne ou un refus donne **Réponse reçue, à vérifier**. |
 | `inject_reply(body, sid, t)` | `SmsServiceGateway.inject_reply` (canal simulé), utilisé par la démo. |
 
 ## Frontière d'envoi réel
@@ -22,14 +22,14 @@ Le SMS réel exige `sms_mode = live`, l'activation explicite (choisir **Réel** 
 
 ## Vérifié
 
-- 165 tests, dont `tests/test_integration_lot2.py` : parcours complet avec le vrai `SmsService` simulé, base SQLite et acquittement ; parcours « réel » avec transports Twilio et OpenRouter factices (envoi, statut **Livré**, réponse, délai de 20 min, aucune coordonnée envoyée à OpenRouter) ; panne OpenRouter ; identifiants d'incident uniques ; page Réglages (charger, valider, appliquer, rouvrir, erreurs par champ, aperçu).
+- 165 tests, dont `tests/test_integration_lot2.py` : parcours complet avec le vrai `SmsService` simulé, base SQLite et acquittement ; parcours « réel » avec transports Twilio et OpenAI factices (envoi, statut **Livré**, réponse, délai de 20 min, aucune coordonnée envoyée à OpenAI) ; panne OpenAI ; identifiants d'incident uniques ; page Réglages (charger, valider, appliquer, rouvrir, erreurs par champ, aperçu).
 - Fenêtre réelle en démo : **Réglages** ouvre la page du lot 2, et l'écran affiche « Sophie a répondu. En route. Arrivée estimée dans 20 min. » après le SMS simulé.
 - `.\scripts\demo.ps1` et `python -m faaall_alarm --sms-recipe` (recette SMS du lot 2 dans le terminal).
 
 ## Reste à faire sur le poste cible
 
 - Essai réel Twilio avec le téléphone convenu : les appels réseau ont été exercés seulement avec des transports factices. Le bouton **Envoyer un SMS de test réel** de la page reste l'action distincte prévue pour cet essai.
-- Appel réel d'OpenRouter avec la clé locale et le modèle choisi.
+- Appel réel d'OpenAI avec la clé locale et le modèle choisi.
 - Page Réglages : la page ne gère qu'une zone de repos, alors que l'application en accepte plusieurs ; enregistrer depuis la page remplace donc les zones de repos par celle de la page.
 - Reprise après arrêt : un SMS lu mais pas encore interprété n'est pas rejoué (il est acquitté après son rattachement). À décider avec Abdoullah si ce risque est acceptable.
 

@@ -1,7 +1,7 @@
-"""Adaptateurs entre les modules du lot 2 (SMS Twilio, OpenRouter) et les protocoles du moteur d'incident.
+"""Adaptateurs entre les modules du lot 2 (SMS Twilio, OpenAI) et les protocoles du moteur d'incident.
 
 Le moteur parle `SmsGateway` et `ReplyInterpreter` (voir sms_contract.py). Le lot 2 fournit
-`SmsService` (sms.py) et `OpenRouter` / `interpret_simulated` (replies.py), avec ses propres types.
+`SmsService` (sms.py) et `OpenAI` / `interpret_simulated` (replies.py), avec ses propres types.
 Ces classes traduisent les types et les fuseaux horaires sans ajouter de logique métier.
 """
 
@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 
 from .model import FallCause
-from .replies import Care, Interpretation, OpenRouter, interpret_simulated
+from .replies import Care, Interpretation, OpenAI, interpret_simulated
 from .sms import Alert, Delivery, Incoming, SmsService
 from .sms_contract import (
     AlertRequest, IncomingSms, InterpretationUnavailable, ReplyInterpretation, ReplyState, SmsAvailability,
@@ -97,17 +97,17 @@ class SmsServiceGateway:
 
 
 class ReplyInterpreterAdapter:
-    """`ReplyInterpreter` du moteur : règles hors ligne ou OpenRouter, selon le mode SMS autorisé."""
+    """`ReplyInterpreter` du moteur : règles hors ligne ou OpenAI, selon le mode SMS autorisé."""
 
-    def __init__(self, openrouter: OpenRouter | None, redact: tuple[str, ...] = ()) -> None:
-        self._openrouter = openrouter
+    def __init__(self, openai: OpenAI | None, redact: tuple[str, ...] = ()) -> None:
+        self._openai = openai
         self._redact = redact
 
     def interpret(self, text: str) -> ReplyInterpretation:
         result: Interpretation = (
-            self._openrouter.interpret(text, redact=self._redact) if self._openrouter
+            self._openai.interpret(text, redact=self._redact) if self._openai
             else interpret_simulated(text)
         )
         if result.service_unavailable:
-            raise InterpretationUnavailable("OpenRouter indisponible")
+            raise InterpretationUnavailable("OpenAI indisponible")
         return ReplyInterpretation(_CARE_TO_STATE[result.state], result.eta_minutes)

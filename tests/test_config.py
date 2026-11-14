@@ -62,7 +62,7 @@ def test_apply_n_ecrit_rien_si_invalide(tmp_path):
 
 def test_aucun_secret_n_est_ecrit_dans_le_fichier_local(tmp_path, monkeypatch):
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "jeton-factice-ne-pas-ecrire")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "cle-factice-ne-pas-ecrire")
+    monkeypatch.setenv("OPENAI_API_KEY", "cle-factice-ne-pas-ecrire")
     path = tmp_path / "config.local.json"
     apply_config({"countdown_seconds": 12}, path)
     content = path.read_text(encoding="utf-8")

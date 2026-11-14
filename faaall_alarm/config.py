@@ -6,7 +6,7 @@ indiquées). Les réglages modifiables depuis la page Réglages sont dans `AppCo
 (voir docs/RACCORDEMENT.md).
 
 Priorité de lecture : `config.local.json` > variables d'environnement (.env) > valeurs par défaut.
-Les secrets (jeton Twilio, clé OpenRouter) restent dans l'environnement : ils ne sont jamais
+Les secrets (jeton Twilio, clé OpenAI) restent dans l'environnement : ils ne sont jamais
 écrits dans `config.local.json`.
 """
 

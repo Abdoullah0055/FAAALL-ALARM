@@ -2,7 +2,7 @@
 
 Ils servent à la démo, aux tests et tant que les modules d'Abdoullah ne sont pas reliés.
 `SimulatedReplyInterpreter` est une règle simple de remplacement : elle n'est pas l'interpréteur
-OpenRouter et ne couvre pas toute la langue.
+OpenAI et ne couvre pas toute la langue.
 """
 
 from __future__ import annotations

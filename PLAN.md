@@ -1,6 +1,6 @@
 # FAAALL-ALARM — plan de réalisation
 
-Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l’interface de surveillance Windows. Abdoullah réalise la page Réglages de l’application, le système SMS avec OpenRouter pour interpréter les réponses, la page de présentation et la préparation des données.** Abdoullah prend aussi en charge les livrables de [PRODUCT.md](PRODUCT.md) qui ne relèvent pas du lot d’Adam.
+Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l’interface de surveillance Windows. Abdoullah réalise la page Réglages de l’application, le système SMS avec OpenAI pour interpréter les réponses, la page de présentation et la préparation des données.** Abdoullah prend aussi en charge les livrables de [PRODUCT.md](PRODUCT.md) qui ne relèvent pas du lot d’Adam.
 
 [PRODUCT.md](PRODUCT.md) définit le comportement attendu. [AGENTS.md](AGENTS.md) guide les agents qui modifient le dépôt. Le plan attribue les tâches et fixe l’ordre d’intégration.
 
@@ -26,16 +26,16 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 - [x] **Configuration et historique.** Fournir les fonctions de lecture, de validation et d’application des réglages dont la page d’Abdoullah a besoin. Brancher le bouton **Réglages** de l’écran de surveillance sur sa page. Enregistrer les événements utiles et permettre d’effacer l’historique. Sur l’écran de surveillance, utiliser **Personne** ou **Personne 1** et **Personne 2**, selon le nombre de personnes suivies.
   *Fait et vérifié :* `read_config`, `validate_config`, `apply_config`, historique local avec effacement, bouton **Réglages** relié à la page d’Abdoullah par `AppSettingsBackend` (voir [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md)).
 - [x] **Tests et intégration.** Tester le moteur avec une horloge contrôlable et des observations simulées. Brancher l’adaptateur SMS simulé fourni par Abdoullah, puis l’adaptateur Twilio. Vérifier que la réception des réponses et les appels réseau n’interrompent ni la capture ni l’interface.
-  *Fait :* moteur testé avec horloge contrôlable, `SmsService` et `OpenRouter` du lot 2 branchés (simulé, puis chemin réel avec transports factices), frontière d’envoi réel testée, appels réseau sur des fils de travail. *Reste :* essai réel Twilio et OpenRouter sur le poste cible.
+  *Fait :* moteur testé avec horloge contrôlable, `SmsService` et `OpenAI` du lot 2 branchés (simulé, puis chemin réel avec transports factices), frontière d’envoi réel testée, appels réseau sur des fils de travail. *Reste :* essai réel Twilio et OpenAI sur le poste cible.
 
 **Livrable du lot.** Une application Windows lançable selon le README, capable de lire la webcam ou un MP4, de détecter un scénario de chute, de diffuser la voix et de montrer le parcours SMS simulé jusqu’à la réponse du proche.
 
-**État du lot (V1).** Le livrable est atteint et les deux lots sont raccordés ([docs/RACCORDEMENT.md](docs/RACCORDEMENT.md), 165 tests) : `.\scripts\demo.ps1` rejoue un MP4, déclenche la voix, affiche le décompte puis simule le SMS et la réponse « Je suis en route, j’arrive dans environ 20 minutes ». Il reste les essais sur le poste cible : cadrage, voix audible, calibration des seuils, essai réel Twilio et OpenRouter avec le téléphone convenu.
+**État du lot (V1).** Le livrable est atteint et les deux lots sont raccordés ([docs/RACCORDEMENT.md](docs/RACCORDEMENT.md), 165 tests) : `.\scripts\demo.ps1` rejoue un MP4, déclenche la voix, affiche le décompte puis simule le SMS et la réponse « Je suis en route, j’arrive dans environ 20 minutes ». Il reste les essais sur le poste cible : cadrage, voix audible, calibration des seuils, essai réel Twilio et OpenAI avec le téléphone convenu.
 
 ## Lot 2 — Abdoullah
 
 - [x] **SMS bidirectionnels.** Adaptateurs simulé et Twilio, format de l’alerte, suivi, lecture des réponses et reprise sans renvoi. Vérifié avec transport factice. La recette téléphone reste ouverte.
-- [x] **Interprétation OpenRouter.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
+- [x] **Interprétation OpenAI.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
 - [x] **Page Réglages autonome.** Contrôles, validation, persistance, aperçu fictif, test sonore et actions SMS. Recette Tk Windows effectuée en simulation.
 - [x] **Branchement des Réglages et des SMS à la surveillance d’Adam.** Appliqué selon le [contrat d’intégration](docs/integration-lot-2.md) : voir [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md). L’essai réel sur téléphone reste ouvert.
 - [ ] **Données d’entraînement et de validation.** Trouver et documenter des jeux de données autorisés qui couvrent les chutes debout, assises et lentes, les gestes ordinaires, les collisions à deux ainsi que les croisements ou rapprochements sans collision. Annoter les personnes impliquées et les instants visibles de contact entre personnes, de début de chute et de contact au sol. Tenir un inventaire avec les sources et licences. Séparer les jeux par personne lorsque les identifiants le permettent, sinon par séquence d’origine. Remettre à Adam les données ou les modalités d’accès et les annotations. Garder les médias privés hors de Git.
@@ -44,7 +44,7 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 - [x] **Page de présentation.** Page française et exemple interactif avec données fictives. Simulation vérifiée dans Chromium au clavier et aux largeurs de 320 à 1 280 px.
 - [x] **Livrables de démo.** Scénario Windows et terminal reproductible, [résultats de recette produit](PRODUCT.md#résultats-de-recette-du-lot-2) et passage de relais.
 
-**Livrable du lot.** Un module SMS simulable, un adaptateur Twilio prêt à vérifier sur téléphone, un interpréteur OpenRouter testé, la page Réglages, une page de présentation, un corpus documenté et les éléments de démonstration.
+**Livrable du lot.** Un module SMS simulable, un adaptateur Twilio prêt à vérifier sur téléphone, un interpréteur OpenAI testé, la page Réglages, une page de présentation, un corpus documenté et les éléments de démonstration.
 
 ## Contrat entre les deux lots
 
