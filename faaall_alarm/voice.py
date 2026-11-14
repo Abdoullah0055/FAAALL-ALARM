@@ -44,17 +44,19 @@ def find_espeak(configured_path: str = "") -> Path | None:
 
 
 class EspeakVoice:
-    def __init__(self, executable: str = "", speed_wpm: int = 150, voice: str = "fr") -> None:
+    def __init__(self, executable: str = "", speed_wpm: int = 150, voice: str = "fr", volume_percent: int = 100) -> None:
         self._executable = find_espeak(executable)
         self._speed_wpm = speed_wpm
         self._voice = voice
+        self._volume_percent = volume_percent
 
     def is_available(self) -> bool:
         return self._executable is not None
 
     def _command(self, text: str, extra: tuple[str, ...] = ()) -> list[str]:
         assert self._executable is not None
-        return [str(self._executable), "-v", self._voice, "-s", str(self._speed_wpm), *extra, "--", text]
+        return [str(self._executable), "-v", self._voice, "-s", str(self._speed_wpm), "-a", str(self._volume_percent),
+                *extra, "--", text]
 
     def speak(self, text: str) -> VoiceResult:
         if self._executable is None:

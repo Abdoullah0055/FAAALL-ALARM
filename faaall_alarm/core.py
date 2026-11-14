@@ -6,6 +6,7 @@ la démo hors ligne (exécuteur synchrone et horloge contrôlable).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import Executor
 
 from .clock import Clock
@@ -23,6 +24,9 @@ from .sms_contract import (
 from .voice import Voice, VoiceResult
 
 _FINAL_SMS_STATUSES = (SmsStatus.DELIVERED, SmsStatus.FAILED)
+
+
+ServicesFactory = Callable[[AppConfig], tuple[SmsGateway, ReplyInterpreter, Voice]]
 
 
 class _CorePorts:
@@ -78,12 +82,15 @@ class MonitoringCore:
         history: HistoryStore,
         executor: Executor,
         source_kind: SourceKind,
+        services_factory: ServicesFactory | None = None,
         thresholds: DetectionThresholds | None = None,
         log: DetectionLog | None = None,
         masker: SensitiveMasker | None = None,
     ) -> None:
         self.clock, self.voice, self.gateway, self.interpreter = clock, voice, gateway, interpreter
         self.history, self.executor, self.source_kind = history, executor, source_kind
+        self._services_factory = services_factory
+        self._services_stale = False
         self.masker = masker or default_masker()
         self.log = log or DetectionLog(clock, self.masker)
         self.config = config
@@ -105,6 +112,7 @@ class MonitoringCore:
     # -- configuration -------------------------------------------------------------------------------
     def apply_config(self, config: AppConfig) -> None:
         self.config = config
+        self._services_stale = self._services_factory is not None  # reconstruits dès qu'aucun incident n'est ouvert
         self._register_secrets(config)
         self.pipeline.configure_zones(_rectangle(config.monitored_zone), [tuple(z) for z in config.lying_zones])
         self.log.add("Réglages appliqués")
@@ -140,6 +148,16 @@ class MonitoringCore:
     def tick(self) -> None:
         """À appeler régulièrement, indépendamment de la cadence d'analyse."""
         self.engine.tick()
+        if self._services_stale and self.engine.view() is None:
+            self._rebuild_services()
+
+    def _rebuild_services(self) -> None:
+        """Nouvelle passerelle SMS, interpréteur et voix selon les réglages, sans toucher un incident en cours."""
+        self._services_stale = False
+        assert self._services_factory is not None
+        self.gateway, self.interpreter, self.voice = self._services_factory(self.config)
+        self.availability = SmsAvailability.UNVERIFIED
+        self.executor.submit(self.verify_sms_availability)
 
     # -- arrière-plan : réponses et statuts ------------------------------------------------------------
     def poll_background(self, reply_interval_s: float | None = None) -> None:
@@ -164,6 +182,10 @@ class MonitoringCore:
         try:
             for sms in self.gateway.fetch_replies(since):
                 self.engine.handle_incoming_sms(sms)
+                # Acquitté seulement après la décision de rattachement : un arrêt avant permet la reprise.
+                acknowledge = getattr(self.gateway, "acknowledge_reply", None)
+                if acknowledge is not None:
+                    acknowledge(sms.message_id)
         except Exception as error:  # noqa: BLE001
             self.log.add(f"Lecture des réponses indisponible : {type(error).__name__}")
 

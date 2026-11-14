@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "faaall-alarm"
 version = "0.1.0"
 description = "Détection locale de chute, voix de synthèse française hors ligne et alerte SMS (écran Windows)."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
     "mediapipe==1.2.3",
     "opencv-contrib-python==5.0.0.93",
     "numpy>=2.0",
     "pillow>=10.0",
+    "python-dotenv==1.2.2",
 ]
 
 [project.optional-dependencies]

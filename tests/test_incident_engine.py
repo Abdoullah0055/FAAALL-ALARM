@@ -293,6 +293,7 @@ def submitted_incident(engine, clock):
     view = open_incident(engine, clock)
     reach_deadline(engine, clock)
     engine.on_sms_result(view.incident_id, SmsSubmission(SmsStatus.SIMULATED, "SIM-1"))
+    clock.advance(1.0)  # le contrat exige une réponse strictement postérieure à la tentative
     return view.incident_id
 
 
@@ -401,3 +402,25 @@ def test_le_texte_brut_de_la_reponse_n_est_jamais_journalise(engine, clock, port
     engine.on_reply_interpreted(incident_id, "m1", ReplyInterpretation(ReplyState.EN_ROUTE, 5))
     everything = ports.log_text + str(ports.records)
     assert "secret-texte-prive" not in everything
+
+
+def test_reponse_a_l_heure_exacte_de_l_envoi_ou_apres_trente_minutes_est_a_verifier(engine, clock):
+    submitted_incident(engine, clock)
+    same_time = sms_from_contact(clock, message_id="t0", received_at=engine.incidents()[0].sms_requested_wall)
+    assert engine.handle_incoming_sms(same_time) is ReplyRouting.NEEDS_REVIEW
+    clock.advance(31 * 60)
+    assert engine.handle_incoming_sms(sms_from_contact(clock, message_id="late")) is ReplyRouting.NEEDS_REVIEW
+
+
+def test_reglages_figes_pendant_l_incident(clock, ports):
+    from faaall_alarm.incident import IncidentEngine
+
+    from .conftest import default_settings
+
+    live = {"settings": default_settings()}
+    figed = IncidentEngine(clock, ports, lambda: live["settings"])
+    figed.handle_event(fall_event())
+    live["settings"] = default_settings(contact_number="+15145550999", countdown_seconds=60.0)
+    clock.advance(10.0)
+    figed.tick()
+    assert ports.submitted[0].recipient_number == DEMO_CONTACT_NUMBER  # le nouveau destinataire vaut pour la suite

@@ -1,1 +1,2 @@
-python-dotenv==1.2.2
+# Les dépendances sont déclarées dans pyproject.toml (source unique).
+-e .[dev]

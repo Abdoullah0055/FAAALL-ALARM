@@ -136,5 +136,5 @@ class ScenarioRunner:
             action(self)
 
     def inject_reply(self, text: str = DEMO_REPLY_TEXT, sender: str | None = None) -> None:
-        assert isinstance(self.gateway, SimulatedSmsGateway)
+        assert hasattr(self.gateway, "inject_reply"), "passerelle sans canal simulé"
         self.gateway.inject_reply(text, sender or self.config.contact_number, self.config.twilio_number)

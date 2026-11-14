@@ -10,13 +10,12 @@ import cv2
 from PIL import Image, ImageTk
 
 from ..app import MonitoringApp
+from ..settings import STATE_DIR
+from ..settings_page import open_settings
 from ..incident import IncidentState, IncidentView
-from ..integration import load_settings_page
 from ..logbook import format_entry
 from ..model import Posture
-from ..settings_services import SettingsServices
 from .overlay import draw_skeleton
-from .settings_fallback import open_fallback_settings
 from .viewmodel import (
     alert_cause_line, format_countdown, posture_caption, reply_text, sms_status_text, voice_line,
 )
@@ -30,7 +29,7 @@ ALERT_COLOR = "#b00020"
 class MainWindow:
     def __init__(self, root: tk.Tk, app: MonitoringApp) -> None:
         self.root, self.app, self.core = root, app, app.core
-        self.services = SettingsServices(self.core, app.options.config_path)
+        self._settings_window: tk.Toplevel | None = None
         self._skeleton_var = tk.BooleanVar(value=app.config.show_skeleton)
         self._photo: ImageTk.PhotoImage | None = None
         self._log_count = 0
@@ -127,11 +126,13 @@ class MainWindow:
         self.root.after(COPY_CONFIRMATION_MS, lambda: self.copy_label.configure(text=""))
 
     def open_settings(self) -> None:
-        page = load_settings_page()
-        if page is not None:
-            page(self.root, self.services)
-        else:
-            open_fallback_settings(self.root, self.services)
+        """Page Réglages du lot 2, branchée sur la configuration et le moteur en cours."""
+        if self._settings_window is not None and self._settings_window.winfo_exists():
+            self._settings_window.lift()
+            return
+        self._settings_window = open_settings(
+            self.root, self.app.settings_backend, self.app.settings_services, STATE_DIR,
+        )
 
     def show_history(self) -> None:
         window = tk.Toplevel(self.root)

@@ -7,6 +7,7 @@ interprétation) passent par des ports asynchrones et rappellent le moteur à la
 
 from __future__ import annotations
 
+import secrets
 import threading
 from collections import deque
 from dataclasses import dataclass, field
@@ -49,7 +50,8 @@ class IncidentSettings:
     twilio_number: str = ""
     voice_enabled: bool = True
     voice_message: str = ""
-    reply_ambiguity_window_s: float = 1800.0
+    reply_window_s: float = 1800.0  # une réponse doit arriver dans les 30 min suivant l'envoi
+    reply_ambiguity_window_s: float = 86400.0  # autre soumission dans les 24 h : rattachement ambigu
 
 
 def incident_settings_from(config: AppConfig) -> IncidentSettings:
@@ -107,6 +109,7 @@ class Incident:
     reply: ReplyRecord = field(default_factory=ReplyRecord)
     pending_replies: dict[str, datetime] = field(default_factory=dict)
     outcome: str = ""
+    settings: IncidentSettings = field(default_factory=IncidentSettings)  # figés à l'ouverture
 
 
 @dataclass(frozen=True)
@@ -267,7 +270,8 @@ class IncidentEngine:
             if sms.message_id in self._seen_message_ids:
                 return ReplyRouting.DUPLICATE
             self._seen_message_ids.add(sms.message_id)
-            settings = self._settings()
+            active_incident = self._active()
+            settings = active_incident.settings if active_incident else self._settings()
             if _digits(sms.sender) != _digits(settings.contact_number) or (
                 _digits(sms.recipient) != _digits(settings.twilio_number)
             ):
@@ -279,7 +283,10 @@ class IncidentEngine:
                 self._ports.log("Réponse reçue, à vérifier (aucun incident ouvert avec alerte soumise)")
                 self._ports.record("reponse_a_verifier", motif="aucun incident ouvert")
                 return ReplyRouting.NEEDS_REVIEW
-            if sms.received_at < incident.sms_requested_wall or self._ambiguous_with_previous(incident, settings):
+            elapsed_s = (sms.received_at - incident.sms_requested_wall).total_seconds()
+            if elapsed_s <= 0 or elapsed_s > settings.reply_window_s or self._ambiguous_with_other_alert(
+                incident, sms, settings
+            ):
                 incident.reply.needs_review = True
                 self._ports.log("Réponse reçue, à vérifier (rattachement ambigu à l'incident)")
                 self._ports.record("reponse_a_verifier", incident=incident.incident_id, motif="ambigu")
@@ -341,7 +348,7 @@ class IncidentEngine:
                 can_cancel=incident.state is IncidentState.COUNTDOWN,
                 can_close=incident.state is IncidentState.HANDLED, voice_ok=incident.voice_ok,
                 sms_status=incident.sms_status, reply=_copy_reply(incident.reply),
-                contact_name=self._settings().contact_name, camera_available=self._camera_available,
+                contact_name=incident.settings.contact_name, camera_available=self._camera_available,
                 created_wall=incident.created_wall,
             )
 
@@ -390,10 +397,10 @@ class IncidentEngine:
         self._sequence += 1
         wall = self._clock.wall()
         incident = Incident(
-            incident_id=f"INC-{self._sequence:03d}-{wall:%H}h{wall:%M}", created_wall=wall, created_monotonic=now,
+            incident_id=f"INC-{self._sequence:03d}-{wall:%H}h{wall:%M}-{secrets.token_hex(3)}", created_wall=wall, created_monotonic=now,
             cause=cause, first_name=self._attributable_first_name(cause, settings),
             deadline_monotonic=now + settings.countdown_seconds, countdown_seconds=settings.countdown_seconds,
-            fallen_tracks=set(tracks),
+            fallen_tracks=set(tracks), settings=settings,
         )
         self._incidents.append(incident)
         self._ports.log(
@@ -415,7 +422,7 @@ class IncidentEngine:
         return None
 
     def _submit(self, incident: Incident) -> None:
-        settings = self._settings()
+        settings = incident.settings  # numéros et décompte figés pendant la durée de l'incident
         key = (incident.incident_id, settings.contact_number)
         if key in self._submitted_keys:
             return
@@ -461,14 +468,16 @@ class IncidentEngine:
         """Une personne encore au sol ne peut pas déclencher de nouvel incident avant sa reprise."""
         self._suppressed_tracks |= incident.fallen_tracks - incident.recovered_tracks
 
-    def _ambiguous_with_previous(self, incident: Incident, settings: IncidentSettings) -> bool:
-        """Réponse possiblement destinée à une alerte précédente restée sans réponse."""
+    def _ambiguous_with_other_alert(self, incident: Incident, sms: IncomingSms, settings: IncidentSettings) -> bool:
+        """Un SMS ordinaire n'indique pas son alerte d'origine : une autre soumission dans les 24 h qui
+        précèdent la réponse rend le rattachement ambigu. Une conversation déjà rattachée à cet incident
+        (première réponse acceptée) reste la sienne."""
         if incident.reply.received_at is not None:
             return False
         for other in self._incidents:
-            if other is incident or other.sms_requested_wall is None or other.reply.received_at is not None:
+            if other is incident or other.sms_requested_wall is None:
                 continue
-            age = (incident.sms_requested_wall - other.sms_requested_wall).total_seconds()
+            age = (sms.received_at - other.sms_requested_wall).total_seconds()
             if 0 <= age <= settings.reply_ambiguity_window_s:
                 return True
         return False

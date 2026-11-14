@@ -20,6 +20,8 @@ from .integration import build_interpreter, build_sms_gateway, real_sms_allowed
 from .logbook import HistoryStore
 from .model import FrameObservation, PersonView, SourceKind, SourceStatus
 from .pose import MediaPipePoseEstimator, PoseEstimator, ScenarioPoseEstimator
+from .settings import STATE_DIR, LocalSettings, configuration
+from .settings_backend import AppSettingsBackend
 from .simulation.demo import DemoDirector, ensure_demo_video
 from .simulation.runner import demo_config
 from .simulation.scenarios import get_scenario
@@ -54,15 +56,16 @@ class MonitoringApp:
         self._estimator, self.source = self._build_source(options)
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="faaall")
         history_mode = "réel" if real_sms_allowed(self.config, self.source_kind) else "simulé"
-        voice = (
-            EspeakVoice(self.config.espeak_path, self.config.voice_speed_wpm)
-            if self.config.voice_enabled else UnavailableVoice()
-        )
+        gateway, interpreter, voice = self._build_services(self.config)
         self.core = MonitoringCore(
-            self.config, self.clock, voice,
-            build_sms_gateway(self.config, self.source_kind, self.clock),
-            build_interpreter(self.config, self.source_kind),
+            self.config, self.clock, voice, gateway, interpreter,
             HistoryStore(DEFAULT_HISTORY_PATH, history_mode, self.clock), self.executor, self.source_kind,
+            services_factory=self._build_services,
+        )
+        self.settings_services = LocalSettings(STATE_DIR / "reglages.json", configuration())
+        self.settings_backend = AppSettingsBackend(
+            self.core, self.settings_services, self.source_kind,
+            lambda: (self.latest().image_bgr if self.latest() else None), options.config_path,
         )
         self.director = (
             DemoDirector(self.core, options.demo_reply_delay_s, cancel_after_s=options.demo_cancel_after_s)
@@ -74,6 +77,15 @@ class MonitoringApp:
         self._thread = threading.Thread(target=self._run, name="analyse", daemon=True)
 
     # -- construction ---------------------------------------------------------------------------------
+    def _build_services(self, config: AppConfig):
+        """Passerelle SMS, interpréteur et voix selon les réglages (reconstruits au repos après Réglages)."""
+        voice = (
+            EspeakVoice(config.espeak_path, config.voice_speed_wpm, volume_percent=config.voice_volume)
+            if config.voice_enabled else UnavailableVoice()
+        )
+        return (build_sms_gateway(config, self.source_kind, self.clock),
+                build_interpreter(config, self.source_kind), voice)
+
     def _resolve_config_and_kind(self, options: AppOptions) -> tuple[AppConfig, SourceKind]:
         if options.demo_scenario:
             base = demo_config()  # identité factice : la démo ne lit ni .env ni config locale

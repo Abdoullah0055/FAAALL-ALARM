@@ -111,6 +111,7 @@ class AppConfig:
     voice_enabled: bool = True
     voice_message: str = DEFAULT_VOICE_MESSAGE
     voice_speed_wpm: int = 150
+    voice_volume: int = 100  # amplitude eSpeak NG, en %
     espeak_path: str = ""  # vide : recherche automatique
 
     monitored_zone: list[float] = field(default_factory=list)  # [x0, y0, x1, y1] normalisés, vide = tout
@@ -156,6 +157,7 @@ def _config_from_environment() -> dict[str, Any]:
         "FAAALL_SMS_MODE": "sms_mode",
         "FAAALL_MONITORED_FIRST_NAME": "monitored_first_name",
         "FAAALL_ALERT_ADDRESS": "alert_address",
+        "FAAALL_CONTACT_NAME": "contact_name",
         "FAAALL_SMS_TO_NUMBER": "contact_number",
         "TWILIO_FROM_NUMBER": "twilio_number",
     }
@@ -215,7 +217,8 @@ def validate_config(values: Mapping[str, Any], *, strict_live: bool = True) -> l
     camera_index = merged["camera_index"]
     if isinstance(camera_index, bool) or not isinstance(camera_index, int) or camera_index < 0:
         report("camera_index", "Caméra : entrer un numéro de caméra entier (0 pour la première).")
-    number("countdown_seconds", 3, 120, "Décompte", "secondes")
+    number("countdown_seconds", 1, 300, "Décompte", "secondes")
+    number("voice_volume", 0, 100, "Volume de la voix", "%")
     number("reply_poll_interval_s", 2, 60, "Lecture des réponses", "secondes")
     number("voice_speed_wpm", 80, 300, "Vitesse de la voix", "mots par minute")
 

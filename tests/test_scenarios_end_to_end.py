@@ -183,53 +183,44 @@ def test_reponse_d_un_numero_etranger_est_ignoree():
     assert "expéditeur ou d'un numéro inattendu" in result.log_text
 
 
-def test_mode_mp4_et_simulation_n_utilisent_jamais_un_fournisseur_reel(monkeypatch):
-    """Même avec un module réel présent et une configuration live valide, MP4 et tests restent simulés."""
+def test_mode_mp4_et_simulation_n_utilisent_jamais_un_fournisseur_reel(tmp_path):
+    """Même avec Twilio valide en mode live, MP4 et simulation restent simulés : aucun appel au transport."""
     from faaall_alarm import integration
+    from faaall_alarm.adapters import SmsServiceGateway
 
-    class RealGatewayDoubleurDeTest:
-        calls = 0
+    appels = []
 
-        def check_availability(self):
-            raise AssertionError("ne doit pas être appelé")
+    def transport_interdit(*args, **kwargs):
+        appels.append(args)
+        raise AssertionError("appel réseau interdit")
 
-        def submit_alert(self, request):
-            type(self).calls += 1
-            raise AssertionError("SMS réel interdit")
-
-    monkeypatch.setattr(
-        integration, "_load",
-        lambda entry: (lambda config: RealGatewayDoubleurDeTest()) if entry == integration.REAL_GATEWAY_FACTORY else None,
-    )
     live = demo_config(sms_mode="live", sms_live_confirmed=True)
+    environnement = {"TWILIO_ACCOUNT_SID": "AC" + "0" * 32, "TWILIO_AUTH_TOKEN": "jeton-factice"}
     for kind in (SourceKind.VIDEO_FILE, SourceKind.SIMULATION):
-        gateway = integration.build_sms_gateway(live, kind, ScenarioRunner(get_scenario("chute_debout")).clock)
-        assert isinstance(gateway, SimulatedSmsGateway), kind
-    runner = ScenarioRunner(get_scenario("chute_debout"), config=live, source_kind=SourceKind.VIDEO_FILE,
-                            gateway=integration.build_sms_gateway(live, SourceKind.VIDEO_FILE, ScenarioRunner(get_scenario("chute_debout")).clock))
-    runner.run(until_s=25.0)
-    assert RealGatewayDoubleurDeTest.calls == 0
+        gateway = integration.build_sms_gateway(
+            live, kind, ScenarioRunner(get_scenario("chute_debout")).clock, tmp_path, environnement, transport_interdit,
+        )
+        assert isinstance(gateway, SmsServiceGateway) and gateway.service.simulated, kind
+        runner = ScenarioRunner(get_scenario("chute_debout"), config=live, source_kind=kind, gateway=gateway)
+        runner.run(until_s=25.0)
+        assert gateway.service.lookup(runner.core.engine.incidents()[0].incident_id).state.value == "Simulé"
+    assert appels == []
 
 
-def test_la_garde_bloque_un_adaptateur_reel_hors_webcam(monkeypatch):
+def test_la_garde_bloque_un_adaptateur_reel_hors_webcam(tmp_path):
     from faaall_alarm.integration import SendGuard
-
-    class RealGateway:
-        submitted = 0
-
-        def check_availability(self):
-            return None
-
-        def submit_alert(self, request):
-            type(self).submitted += 1
-
-    runner = ScenarioRunner(get_scenario("chute_debout"))
-    guard = SendGuard(RealGateway(), lambda: False, runner.clock)
-    request = runner.gateway.submitted_requests  # liste vide : on fabrique une demande minimale
     from faaall_alarm.sms_contract import AlertRequest
 
-    outcome = guard.submit_alert(AlertRequest("X", runner.clock.wall(), FallCause.INDIVIDUAL, None, "", "", ""))
-    assert outcome.status is SmsStatus.FAILED and RealGateway.submitted == 0 and request == []
+    class Passerelle:
+        soumissions = 0
+
+        def submit_alert(self, request):
+            type(self).soumissions += 1
+
+    runner = ScenarioRunner(get_scenario("chute_debout"))
+    garde = SendGuard(Passerelle(), lambda: False, runner.clock)
+    resultat = garde.submit_alert(AlertRequest("X", runner.clock.wall(), FallCause.INDIVIDUAL, None, "", "", ""))
+    assert resultat.status is SmsStatus.FAILED and Passerelle.soumissions == 0
 
 
 def test_reel_exige_mode_live_activation_explicite_et_webcam():

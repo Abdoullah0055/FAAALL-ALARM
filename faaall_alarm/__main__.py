@@ -24,6 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cancel-after", type=float, help="Démo : annule l'alerte après N secondes.")
     parser.add_argument("--headless", action="store_true",
                         help="Démo : rejoue le scénario sans fenêtre et affiche la chronologie.")
+    parser.add_argument("--sms-recipe", action="store_true",
+                        help="Rejoue la recette SMS du lot 2 dans le terminal (service simulé, hors ligne).")
     parser.add_argument("--check", action="store_true", help="Vérifie l'installation (Python, OpenCV, MediaPipe, eSpeak NG).")
     parser.add_argument("--voice-test", action="store_true", help="Prononce le message d'alerte, sans incident.")
     parser.add_argument("--list-scenarios", action="store_true", help="Liste les scénarios de démonstration.")
@@ -40,6 +42,25 @@ def _enable_windows_dpi_awareness() -> None:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except (AttributeError, OSError):
         pass
+
+
+def run_sms_recipe() -> int:
+    """Recette SMS du lot 2 : alerte fictive, SMS simulé, réponse du proche, sans moteur de détection."""
+    import tempfile
+
+    from .demo import Demo
+    from .replies import DEMO_REPLY
+
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    with tempfile.TemporaryDirectory() as directory:
+        demo = Demo.create(Path(directory) / "demo.sqlite3")
+        print("Incident fictif · échéance simulée")
+        print(demo.alert.message())
+        print(f"SMS · {demo.send().state}")
+        print(DEMO_REPLY)
+        _, response = demo.reply()
+        print(response.label())
+    return 0
 
 
 def run_check() -> int:
@@ -59,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.check:
         return run_check()
+    if args.sms_recipe:
+        return run_sms_recipe()
     if args.voice_test:
         from .config import read_config
         from .voice import EspeakVoice

@@ -18,10 +18,11 @@ def test_valeurs_par_defaut_valides_et_mode_simule_par_defaut():
 
 
 def test_decompte_hors_limites_rejete_avec_message_lisible():
-    issues = validate_config({"countdown_seconds": 1})
+    issues = validate_config({"countdown_seconds": 0})
     assert [issue.field for issue in issues] == ["countdown_seconds"]
     assert "secondes" in issues[0].message
-    assert validate_config({"countdown_seconds": 30}) == []
+    assert validate_config({"countdown_seconds": 1}) == [] and validate_config({"countdown_seconds": 300}) == []
+    assert validate_config({"countdown_seconds": 301}) != []
 
 
 def test_numeros_au_format_e164():
@@ -80,6 +81,6 @@ def test_lecture_tolere_un_fichier_illisible_ou_invalide(tmp_path):
     path = tmp_path / "config.local.json"
     path.write_text("{pas du json", encoding="utf-8")
     assert read_config(path, use_environment=False) == AppConfig()
-    path.write_text(json.dumps({"countdown_seconds": 1, "contact_name": "Sophie"}), encoding="utf-8")
+    path.write_text(json.dumps({"countdown_seconds": 999, "contact_name": "Sophie"}), encoding="utf-8")
     config = read_config(path, use_environment=False)
     assert config.countdown_seconds == 10.0 and config.contact_name == "Sophie"
