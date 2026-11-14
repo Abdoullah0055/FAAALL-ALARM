@@ -54,13 +54,14 @@ class MonitoringApp:
         self.clock = SystemClock()
         self.config, self.source_kind = self._resolve_config_and_kind(options)
         self._estimator, self.source = self._build_source(options)
-        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="faaall")
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="faaall")  # voix, envoi, analyse
+        self.poll_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="faaall-sondage")
         history_mode = "réel" if real_sms_allowed(self.config, self.source_kind) else "simulé"
         gateway, interpreter, voice = self._build_services(self.config)
         self.core = MonitoringCore(
             self.config, self.clock, voice, gateway, interpreter,
             HistoryStore(DEFAULT_HISTORY_PATH, history_mode, self.clock), self.executor, self.source_kind,
-            services_factory=self._build_services,
+            services_factory=self._build_services, poll_executor=self.poll_executor,
         )
         self.settings_services = LocalSettings(STATE_DIR / "reglages.json", configuration())
         self.settings_backend = AppSettingsBackend(
@@ -124,6 +125,7 @@ class MonitoringApp:
         self.source.close()
         self._estimator.close()
         self.executor.shutdown(wait=False, cancel_futures=True)
+        self.poll_executor.shutdown(wait=False, cancel_futures=True)
 
     def latest(self) -> RenderState | None:
         with self._lock:

@@ -6,6 +6,7 @@ la démo hors ligne (exécuteur synchrone et horloge contrôlable).
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from concurrent.futures import Executor
 
@@ -83,12 +84,17 @@ class MonitoringCore:
         executor: Executor,
         source_kind: SourceKind,
         services_factory: ServicesFactory | None = None,
+        poll_executor: Executor | None = None,
         thresholds: DetectionThresholds | None = None,
         log: DetectionLog | None = None,
         masker: SensitiveMasker | None = None,
     ) -> None:
         self.clock, self.voice, self.gateway, self.interpreter = clock, voice, gateway, interpreter
         self.history, self.executor, self.source_kind = history, executor, source_kind
+        # Les sondages réseau ont leur propre pool : un sondage bloqué ne doit pas retarder la voix ni l'envoi.
+        self.poll_executor = poll_executor or executor
+        self._polls_in_flight: set[str] = set()
+        self._polls_lock = threading.Lock()
         self._services_factory = services_factory
         self._services_stale = False
         self.masker = masker or default_masker()
@@ -164,12 +170,27 @@ class MonitoringCore:
         """Lit les réponses et rafraîchit le statut du SMS. Les appels sortent du fil appelant."""
         now = self.clock.monotonic()
         interval = reply_interval_s if reply_interval_s is not None else self.config.reply_poll_interval_s
-        if now - self._last_reply_poll_monotonic >= interval:
+        if now - self._last_reply_poll_monotonic >= interval and self._start_poll("replies"):
             self._last_reply_poll_monotonic = now
-            self.executor.submit(self._poll_replies)
-        if now - self._last_status_poll_monotonic >= interval:
+            self.poll_executor.submit(self._run_poll, "replies", self._poll_replies)
+        if now - self._last_status_poll_monotonic >= interval and self._start_poll("status"):
             self._last_status_poll_monotonic = now
-            self.executor.submit(self._poll_sms_status)
+            self.poll_executor.submit(self._run_poll, "status", self._poll_sms_status)
+
+    def _start_poll(self, name: str) -> bool:
+        """Un seul sondage de chaque type à la fois : un appel réseau lent ne provoque aucun empilement."""
+        with self._polls_lock:
+            if name in self._polls_in_flight:
+                return False
+            self._polls_in_flight.add(name)
+            return True
+
+    def _run_poll(self, name: str, operation) -> None:
+        try:
+            operation()
+        finally:
+            with self._polls_lock:
+                self._polls_in_flight.discard(name)
 
     def _poll_replies(self) -> None:
         view = self.engine.view()
