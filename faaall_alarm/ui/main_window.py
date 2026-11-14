@@ -18,7 +18,7 @@ from ..settings_services import SettingsServices
 from .overlay import draw_skeleton
 from .settings_fallback import open_fallback_settings
 from .viewmodel import (
-    alert_cause_line, format_countdown, main_posture, posture_caption, reply_text, sms_status_text, voice_line,
+    alert_cause_line, format_countdown, posture_caption, reply_text, sms_status_text, voice_line,
 )
 
 REFRESH_MS = 33
@@ -172,8 +172,7 @@ class MainWindow:
         self.status_label.configure(text=self.core.status_line())
         state = self.app.latest()
         persons = state.persons if state else []
-        posture = self.core.last_posture
-        self.posture_label.configure(text=posture.value if posture is not Posture.NO_PERSON or not persons else main_posture(persons).value)
+        self.posture_label.configure(text=self.core.last_posture.value)
         self.posture_caption.configure(text=posture_caption(persons))
         self._update_alert(self.core.engine.view())
         self._append_new_logs()
