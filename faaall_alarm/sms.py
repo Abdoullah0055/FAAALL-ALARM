@@ -92,9 +92,12 @@ def twilio_diagnostic(error: ServiceError, *, technical: bool = False) -> str:
         hint = hints[20003]
     if error.status == 400 and error.code is None:
         hint = ("Requête rejetée. Aucun code Twilio exploitable dans la réponse. "
-                "Cherchez l’erreur à l’heure du test dans Twilio Console → Monitor → Errors.")
+                "Si le compte est en essai, comparez avec un modèle Twilio dans Try out SMS, "
+                "vers un numéro vérifié. Sinon, vérifiez le numéro expéditeur et les permissions du pays.")
+    if error.clue:
+        hint = f"{error.clue} {hints.get(error.code, '')}".strip()
     if details:
-        return " · ".join(details) + f". {hint or 'Consultez les journaux de messagerie Twilio.'}"
+        return " · ".join(details) + f". {hint or 'Consultez le dictionnaire des erreurs Twilio.'}"
     return f"Twilio · {error.reason}. Vérifiez la connexion et les journaux Twilio."
 
 
@@ -343,7 +346,8 @@ class SmsService:
             return self.lookup(alert.incident_id)
         if self.simulated:
             return Submission(alert.incident_id, initial, attempted_at)
-        self._log("Soumission · intention enregistrée, POST Messages vers Twilio.")
+        self._log("Soumission · intention enregistrée, POST Messages vers Twilio · "
+                  "numéros au format international validés · texte SMS personnalisé.")
         try:
             sid, state, diagnostic = self._twilio().submit(message)
             self._log(f"Soumission · réponse reçue avec identifiant de message · {state}"

@@ -147,14 +147,34 @@ class SmsTests(unittest.TestCase):
         self.assertIn("SMS de test · Échec\nSoumission · HTTP 400 · code Twilio 21608", label)
         self.assertNotIn(CONFIG.recipient, label)
 
-    def test_settings_diagnostic_points_to_debugger_for_http_400_without_code(self):
+    def test_settings_diagnostic_suggests_trial_test_for_http_400_without_code(self):
         def reject(*args):
             raise ServiceError(400)
 
         service = self.service(reject, Source.MANUAL_SMS)
         label = sms_test_label(service.submit(ALERT, confirmed_test=True))
         self.assertIn("Soumission · HTTP 400", label)
-        self.assertIn("Monitor → Errors", label)
+        self.assertIn("Try out SMS", label)
+
+    def test_local_log_classifies_trial_refusal_and_recovers_code_from_documentation_url(self):
+        path = self.database.with_name("sms-logs.txt")
+
+        def reject(request, timeout):
+            payload = json.dumps({
+                "message": f"Trial account must use a predefined template for {CONFIG.recipient}",
+                "more_info": "https://www.twilio.com/docs/errors/21608",
+            }).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS, log_path=path)
+            service.submit(ALERT, confirmed_test=True)
+        log = path.read_text(encoding="utf-8")
+        self.assertIn("code Twilio 21608", log)
+        self.assertIn("modèle SMS imposé par l’essai Twilio", log)
+        self.assertNotIn(CONFIG.recipient, log)
+        self.assertNotIn("predefined template", log)
 
     def test_settings_diagnostic_reports_delivery_error_code(self):
         def transport(url, headers, body=None):

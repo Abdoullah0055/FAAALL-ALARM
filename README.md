@@ -46,7 +46,7 @@ Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests n
 
 Si le SMS de test échoue, consulte le résultat dans **Réglages → SMS**. Il indique les champs à corriger, l’étape en échec et les codes HTTP ou Twilio disponibles. **Vérifier le canal** vérifie l’accès à Twilio sans envoyer de SMS.
 
-L’application crée `sms-logs.txt` à la racine du projet au premier événement journalisé. Le fichier local horodate les étapes et précise notamment le type de réponse HTTP lorsqu’un code Twilio manque. Il exclut les numéros, identifiants, secrets et textes SMS. Tu peux le supprimer pour repartir avec un journal vide.
+L’application crée `sms-logs.txt` à la racine du projet au premier événement journalisé. Le fichier local horodate les étapes et relève les motifs de refus reconnus dans la réponse Twilio, même si aucun code n’est fourni. Si la réponse ne permet pas d’identifier le motif, le journal indique les vérifications possibles sans accès à Monitor. Il exclut les numéros, identifiants, secrets et textes SMS. Tu peux le supprimer pour repartir avec un journal vide.
 
 Le bouton **Réglages** ouvre la page du lot 2 : caméra et zones, voix, décompte, SMS (mode **Simulé** ou **Réel**) et simulation d'incident. Les réglages sont enregistrés dans `config.local.json` et s'appliquent au moteur en cours : le décompte, les numéros et les services valent pour les nouveaux incidents.
 
