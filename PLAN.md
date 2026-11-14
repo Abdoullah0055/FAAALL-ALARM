@@ -6,6 +6,13 @@ Le projet se divise en deux lots. **Adam, avec Claude, réalise le backend et l�
 
 Avant toute modification, vérifiez votre branche avec `git branch --show-current`. Pour démarrer depuis `origin/main` après un `git fetch origin`, Adam crée sa branche avec `git switch -c plan/adam/demarrage origin/main` et Abdoullah avec `git switch -c plan/abdoullah0055/demarrage origin/main`. Si la branche de la tâche existe déjà, rejoignez-la. Les commits se font sur les branches de travail et les PR les intègrent à `main`.
 
+## Méthode de travail commune
+
+Écrivez du code lisible et maintenable, avec des responsabilités claires et des vérifications ciblées. Appliquez les règles de [qualité du code](AGENTS.md#qualité-du-code) et utilisez les [skills du projet](AGENTS.md#skills-du-projet) au moment indiqué.
+
+- **Adam et Abdoullah.** Utilisez `systematic-debugging` dès qu’un résultat diverge du comportement attendu, notamment pour les chutes, les collisions, le décompte et les SMS. Utilisez `verification-before-completion` avant chaque livraison et pendant la recette commune. Consignez la différence entre test simulé, vérification par MP4 et essai sur le poste cible.
+- **Abdoullah.** Utilise `frontend-design` au moment de concevoir ou de revoir la page de présentation. La page Réglages et l’écran de surveillance suivent `PRODUCT.md` et le contrat entre les deux lots.
+
 ## Lot 1 — Adam avec Claude
 
 - [ ] **Application Windows et vision.** Créer le point d’entrée Python et documenter l’installation sous Windows avec PowerShell. Brancher OpenCV pour la webcam et les MP4, puis MediaPipe Pose. Calculer les indices de posture et de mouvement sur des images horodatées. Gérer l’absence de personne, les occultations, les pertes de caméra et la fin d’un fichier.

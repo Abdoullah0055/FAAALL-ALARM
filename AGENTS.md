@@ -10,6 +10,27 @@ Ces consignes s’appliquent à tout le dépôt FAAALL-ALARM. Lis [PRODUCT.md](P
 - Utilise les commandes documentées par le dépôt. Si tu ajoutes le premier point d’entrée, documente dans le README comment installer, lancer et tester l’application sous Windows avec PowerShell. Indique la version de Python réellement vérifiée avec OpenCV et MediaPipe. Dans les commandes PowerShell, entoure de guillemets les chemins qui contiennent des espaces.
 - Déclare les dépendances dans le manifeste du projet. Pour un modèle de pose ajouté au projet, documente sa source officielle, sa version et la manière de l’installer. Garde des seuils de détection nommés, avec leurs unités et leurs valeurs par défaut, dans une configuration identifiable.
 
+## Qualité du code
+
+- Écris toujours du code propre, lisible et maintenable. Utilise des noms qui décrivent le rôle des fonctions et des variables, des unités explicites et des interfaces simples. Une fonction doit avoir une responsabilité claire. Explique les décisions qui seraient difficiles à comprendre à la lecture du code.
+- Réutilise les composants existants. Sépare la détection, l’état d’incident, l’interface et les appels aux services selon leurs responsabilités. Garde les réglages et les seuils au même endroit et traite explicitement les erreurs qui changent le comportement visible.
+- Relis le diff comme si l’autre collaborateur devait le reprendre demain. Vérifie le parcours touché et ajoute un test ciblé quand il permet de couvrir une régression ou un contrat partagé. Mets à jour la documentation si l’usage ou la configuration change.
+
+## Skills du projet
+
+Les skills sont versionnés dans `.agents/skills/` pour Codex et `.claude/skills/` pour Claude Code. Utilise le skill pertinent au moment où il apporte quelque chose à la tâche.
+
+| Skill | Quand l’utiliser |
+| --- | --- |
+| [`systematic-debugging`](.agents/skills/systematic-debugging/SKILL.md) | Dès qu’un bug apparaît, avant de modifier le code. Reproduis le problème et établis sa cause avec un MP4, des logs ou une simulation, selon le cas. |
+| [`verification-before-completion`](.agents/skills/verification-before-completion/SKILL.md) | Avant de déclarer un résultat, de livrer un changement ou d’ouvrir une PR. Appuie tes affirmations sur des vérifications récentes et distingue la simulation d’un essai sur le poste cible. |
+| [`frontend-design`](.agents/skills/frontend-design/SKILL.md) | Pour concevoir ou retoucher la page de présentation. Pour l’application Windows, suis le schéma et les états définis dans `PRODUCT.md`. |
+
+Pour mettre à jour un skill, conserve la même version dans les deux dossiers, note la révision source et vérifie sa licence et ses éventuels fichiers de support. Les consignes de ce dépôt s’appliquent aussi aux procédures proposées par les skills.
+
+- Source de `systematic-debugging` et `verification-before-completion` — [obra/superpowers à la révision 22f0b46](https://github.com/obra/superpowers/tree/22f0b463e7a5e579904dd6211a520321035526f7/skills).
+- Source de `frontend-design` — [anthropics/skills à la révision 1780c5e](https://github.com/anthropics/skills/tree/1780c5e5a552fd4d1c9d6a7b0cab26b0c2bef064/skills/frontend-design).
+
 ## Commits et dépôt public
 
 - Fais des commits régulièrement après chaque unité de travail cohérente et vérifiée. Garde les changements indépendants dans des commits distincts et préserve les modifications déjà présentes dans le dépôt.
