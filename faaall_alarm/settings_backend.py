@@ -85,6 +85,10 @@ class AppSettingsBackend:
         return self._source_kind is SourceKind.WEBCAM
 
     @property
+    def requires_real_channel(self) -> bool:
+        return self._source_kind is SourceKind.WEBCAM
+
+    @property
     def telegram_pairing_allowed(self) -> bool:
         return self._core.engine.view() is None
 
@@ -92,6 +96,8 @@ class AppSettingsBackend:
         return settings_from_config(self._core.config)
 
     def validate(self, settings: Settings) -> dict[str, str]:
+        if self.requires_real_channel and settings.sms_mode not in ("live", TELEGRAM_MODE):
+            return {"sms_mode": "La webcam exige Telegram ou SMS Twilio."}
         errors = self._services.validate(settings)
         if errors:
             return errors

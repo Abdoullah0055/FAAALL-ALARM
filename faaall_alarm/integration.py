@@ -96,6 +96,8 @@ def build_sms_gateway(
         **options,
     )
     gateway = SmsServiceGateway(service)
+    if not allowed and source_kind is SourceKind.WEBCAM and config.sms_mode in (TELEGRAM_MODE, SMS_MODE_LIVE):
+        return SendGuard(gateway, lambda: False, clock)
     return SendGuard(gateway, lambda: real_sms_allowed(config, source_kind), clock) if allowed else gateway
 
 

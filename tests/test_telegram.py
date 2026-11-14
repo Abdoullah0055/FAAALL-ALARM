@@ -16,6 +16,19 @@ from faaall_alarm.simulation.runner import ScenarioRunner, demo_config
 from faaall_alarm.simulation.scenarios import get_scenario
 from faaall_alarm.telegram import TelegramChannel, TelegramError, TelegramGateway
 from faaall_alarm.settings_page import SettingsPage
+from faaall_alarm.app import AppOptions, MonitoringApp
+
+
+def test_normal_webcam_start_selects_telegram_without_authorizing_send(monkeypatch, tmp_path):
+    monkeypatch.setattr("faaall_alarm.app.read_config", lambda path: AppConfig(sms_mode="simulated"))
+    app = MonitoringApp.__new__(MonitoringApp)
+    config, source = app._resolve_config_and_kind(AppOptions())
+    assert source is SourceKind.WEBCAM
+    assert (config.sms_mode, config.sms_live_confirmed) == ("telegram", False)
+    gateway = build_sms_gateway(config, source, ManualClock(), tmp_path, {})
+    assert gateway.submit_alert(REQUEST).status is SmsStatus.FAILED
+    video_config, _ = app._resolve_config_and_kind(AppOptions(video_path="factice.mp4"))
+    assert video_config.sms_mode == "simulated"
 
 
 NOW = 1_800_000_000
@@ -167,7 +180,8 @@ def test_telegram_requires_live_webcam_and_confirmation(tmp_path, source):
         pytest.fail("Aucun appel réseau en simulation")
     gateway = build_sms_gateway(config, source, ManualClock(), tmp_path,
                                 {"TELEGRAM_BOT_TOKEN": TOKEN}, forbidden)
-    assert gateway.submit_alert(REQUEST).status is SmsStatus.SIMULATED
+    expected = SmsStatus.FAILED if source is SourceKind.WEBCAM else SmsStatus.SIMULATED
+    assert gateway.submit_alert(REQUEST).status is expected
 
 
 def test_surveillance_attaches_quoted_telegram_reply(tmp_path):

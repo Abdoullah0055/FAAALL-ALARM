@@ -97,9 +97,9 @@ class SettingsPage:
         self.field(voice, 2, "countdown_seconds", "Décompte (secondes)", settings.countdown_seconds)
         ttk.Button(voice, text="Tester le son", command=self.sound).grid(row=3, sticky="w", pady=8)
 
-        self.field(sms, 0, "sms_mode", "Canal d’alerte",
-                   next((label for label, mode in _CHANNELS.items() if mode == settings.sms_mode), "Simulé"),
-                   tuple(_CHANNELS))
+        channels = ("Telegram", "SMS Twilio") if getattr(backend, "requires_real_channel", False) else tuple(_CHANNELS)
+        selected = next((label for label in channels if _CHANNELS[label] == settings.sms_mode), channels[0])
+        self.field(sms, 0, "sms_mode", "Canal d’alerte", selected, channels)
         self.field(sms, 1, "first_name", "Prénom surveillé", settings.first_name)
         self.field(sms, 2, "address", "Adresse d’intervention", settings.address)
         self.field(sms, 3, "contact_name", "Nom du proche", settings.contact_name)
