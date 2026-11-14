@@ -57,11 +57,14 @@ class SendGuard:
         self._clock = clock
 
     def check_availability(self) -> SmsAvailability:
-        return self._gateway.check_availability() if self._is_allowed() else SmsAvailability.UNAVAILABLE
+        return self._gateway.check_availability() if self._is_allowed() else SmsAvailability.ACTIVATION_REQUIRED
 
     def submit_alert(self, request: AlertRequest) -> SmsSubmission:
         if not self._is_allowed():
-            return SmsSubmission(SmsStatus.FAILED, None, "envoi réel non autorisé dans ce mode", self._clock.wall())
+            return SmsSubmission(
+                SmsStatus.FAILED, error="Dans Réglages → SMS, sélectionnez le canal puis cliquez sur Enregistrer.",
+                submitted_at=self._clock.wall(),
+            )
         return self._gateway.submit_alert(request)
 
     def get_status(self, provider_ref: str) -> SmsStatus:

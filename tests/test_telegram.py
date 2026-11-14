@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 from datetime import datetime, timezone
@@ -6,7 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from faaall_alarm.clock import ManualClock
-from faaall_alarm.config import AppConfig
+from faaall_alarm.config import AppConfig, apply_config
 from faaall_alarm.http import ServiceError
 from faaall_alarm.integration import build_sms_gateway
 from faaall_alarm.model import FallCause, SourceKind
@@ -16,6 +17,8 @@ from faaall_alarm.simulation.runner import ScenarioRunner, demo_config
 from faaall_alarm.simulation.scenarios import get_scenario
 from faaall_alarm.telegram import TelegramChannel, TelegramError, TelegramGateway
 from faaall_alarm.settings_page import SettingsPage
+from faaall_alarm.ui.viewmodel import reply_text
+from faaall_alarm.settings import configuration
 from faaall_alarm.app import AppOptions, MonitoringApp
 
 
@@ -26,7 +29,10 @@ def test_normal_webcam_start_selects_telegram_without_authorizing_send(monkeypat
     assert source is SourceKind.WEBCAM
     assert (config.sms_mode, config.sms_live_confirmed) == ("telegram", False)
     gateway = build_sms_gateway(config, source, ManualClock(), tmp_path, {})
-    assert gateway.submit_alert(REQUEST).status is SmsStatus.FAILED
+    assert "à activer" in gateway.check_availability().value
+    submission = gateway.submit_alert(REQUEST)
+    assert submission.status is SmsStatus.FAILED
+    assert "Enregistrer" in submission.error
     video_config, _ = app._resolve_config_and_kind(AppOptions(video_path="factice.mp4"))
     assert video_config.sms_mode == "simulated"
 
@@ -91,7 +97,7 @@ class FakeTelegram:
         self.updates.append({"update_id": len(self.updates) + 1, "message": {
             "chat": {"id": chat, "type": kind}, "from": {"id": chat},
             "text": text, "date": self.now if date is None else date,
-            "reply_to_message": {"message_id": quote},
+            **({"reply_to_message": {"message_id": quote}} if quote is not None else {}),
         }})
 
 
@@ -122,6 +128,39 @@ def test_pairing_expiration_and_bot_change(tmp_path):
     assert TelegramChannel(channel.database, "124:other", api).chat() is None
 
 
+def test_restart_recovers_saved_channel_and_pairing(tmp_path, monkeypatch):
+    channel, api = channel_and_api(tmp_path)
+    pair(channel, api)
+    path = tmp_path / "config.local.json"
+    monkeypatch.setattr("faaall_alarm.config.load_dotenv", lambda: None)
+    assert apply_config({"sms_mode": "telegram", "sms_live_confirmed": True,
+                         "monitored_first_name": "Marie", "alert_address": "123 rue Exemple"}, path).ok
+    app = MonitoringApp.__new__(MonitoringApp)
+    config, source = app._resolve_config_and_kind(AppOptions(config_path=path))
+    gateway = build_sms_gateway(config, source, ManualClock(), tmp_path,
+                                {"TELEGRAM_BOT_TOKEN": TOKEN}, api)
+    assert gateway.chat == 42
+    assert gateway.check_availability().value == "Bot Telegram accessible"
+    page = SettingsPage.__new__(SettingsPage)
+    page.telegram = gateway.channel
+    assert "déjà associé" in page.telegram_pairing_status()
+    assert not api.posts
+
+
+def test_service_configuration_uses_project_path_from_any_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    paths = []
+
+    def fake_dotenv(path, *, interpolate):
+        paths.append(path)
+        return {"TELEGRAM_BOT_TOKEN": TOKEN}
+
+    monkeypatch.setattr("faaall_alarm.settings.dotenv_values", fake_dotenv)
+    assert configuration()["TELEGRAM_BOT_TOKEN"] == TOKEN
+    assert paths[0].is_absolute() and paths[0].name == ".env"
+
+
 def test_telegram_log_records_pairing_and_refusal_without_private_values(tmp_path):
     channel, api = channel_and_api(tmp_path)
     channel.log_path = tmp_path / "telegram-logs.txt"
@@ -142,6 +181,7 @@ def test_telegram_alert_and_test_replies_are_isolated_and_acknowledged(tmp_path)
     gateway = TelegramGateway(channel)
     result = gateway.submit_alert(REQUEST)
     assert result.status is SmsStatus.TELEGRAM_ACCEPTED
+    assert json.loads(api.posts[0]["reply_markup"][0]) == {"force_reply": True}
     assert "COLLISION" in api.posts[0]["text"][0]
     assert gateway.submit_alert(REQUEST) == result
     channel.send("test-factice", "Message de test", "test", 42)
@@ -192,10 +232,14 @@ def test_surveillance_attaches_quoted_telegram_reply(tmp_path):
     pair(channel, api)
     runner.gateway = runner.core.gateway = TelegramGateway(channel)
     runner.core.interpreter = ReplyInterpreterAdapter(None)
+    channel.send("test-precedent", "Test précédent", "test", 42)
+    runner.at(23.0, lambda run: api.update(
+        "Réponse directe ambiguë", date=int(channel.now())))
     runner.at(24.0, lambda run: api.update(
-        "Je suis en route, j’arrive dans environ 20 minutes", quote=1, date=int(channel.now())))
+        "OK, j’arrive dans dix minutes", quote=2, date=int(channel.now())))
     result = runner.run(until_s=40.0)
-    assert len(api.posts) == 1, result.log_text
+    assert len(api.posts) == 2, result.log_text
     view = result.core.engine.view()
     assert view.sms_status is SmsStatus.TELEGRAM_ACCEPTED
-    assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 20)
+    assert (view.reply.state, view.reply.delay_minutes) == (ReplyState.EN_ROUTE, 10)
+    assert "Arrivée estimée dans 10 min" in reply_text(view)
