@@ -1,1 +1,80 @@
-à faire
+# AGENTS.md
+
+Ces consignes s’appliquent à tout le dépôt FAAALL-ALARM. Lis [PRODUCT.md](PRODUCT.md) avant de modifier un comportement. Il définit le périmètre, le cycle d’incident et les critères d’acceptation. Si la demande change une décision produit, mets le code, les tests et la documentation en accord avec cette décision.
+
+## Travailler dans le dépôt
+
+- Vérifie `git status --short` et lis le code, les tests et les éventuels `AGENTS.md` du sous-dossier avant de modifier un fichier. Préserve le travail local déjà présent.
+- Traite la demande en cours et reste dans son périmètre. Une modification qui change la détection, le décompte, l’annulation, l’envoi SMS ou les données collectées doit être explicite.
+- Garde les textes visibles et la documentation utilisateur en français. Réponds brièvement en français et indique le résultat, les vérifications effectuées et les limites qui comptent.
+- Utilise les commandes documentées par le dépôt. Si tu ajoutes le premier point d’entrée, documente dans le README comment installer, lancer et tester l’application sous Windows avec PowerShell. Indique la version de Python réellement vérifiée avec OpenCV et MediaPipe. Dans les commandes PowerShell, entoure de guillemets les chemins qui contiennent des espaces.
+- Déclare les dépendances dans le manifeste du projet. Pour un modèle de pose ajouté au projet, documente sa source officielle, sa version et la manière de l’installer. Garde des seuils de détection nommés, avec leurs unités et leurs valeurs par défaut, dans une configuration identifiable.
+
+## Périmètre et responsabilités du code
+
+Le premier parcours utilise Python, OpenCV et MediaPipe Pose sous Windows, avec une webcam fixe et une personne suivie. Une chute probable déclenche un message humain préenregistré en français sur le PC. Le système prévient un proche par SMS Twilio si l’alerte reste active à la fin du délai.
+
+| Partie | Responsabilité |
+| --- | --- |
+| Capture | Lire la webcam ou un MP4, horodater les images et distinguer une perte de caméra d’une fin de fichier. |
+| Pose et détection | Évaluer la visibilité des points, calculer les indices de mouvement et de posture et produire des observations au fil du temps. |
+| Gestion d’incident | Décider des transitions, gérer le décompte, l’annulation, le réarmement et la décision d’envoyer. |
+| Voix et SMS | Exécuter les actions décidées, suivre la livraison et récupérer les réponses. Le fournisseur SMS reçoit uniquement les données utiles à la conversation. |
+| Interprétation des réponses | Extraire la prise en charge et le délai annoncé à partir du texte du proche. |
+| Interface et historique | Afficher la posture actuelle, l’alerte active, la réponse du proche et le journal de détection. Transmettre les actions de l’utilisateur et consigner les événements utiles localement. |
+
+Garde ces responsabilités distinctes sans multiplier les couches. Le moteur de détection et le cycle d’incident doivent pouvoir être exercés avec des observations, une horloge et des sorties de test. L’inférence, la lecture du WAV et les appels réseau ne doivent pas bloquer l’interface ni le décompte.
+
+## Détection et états d’incident
+
+- Évalue une transition sur plusieurs observations. Combine la descente des épaules ou des hanches, le basculement du torse et la persistance d’une posture basse. Prends en compte la visibilité des points et le cadrage. Une seule image, un cadre horizontal ou une posture allongée ne suffisent pas à ouvrir un incident.
+- Calcule le mouvement selon le temps écoulé et l’échelle du corps. Utilise les horodatages du fichier pour analyser un MP4 et une horloge monotone en direct. Gère les images irrégulières et les interruptions sans estimer une vitesse à travers une longue perte de pose. Réserve l’heure civile à l’affichage et à l’historique.
+- Préserve les cas de chute depuis une chaise et d’affaissement lent. Les zones où l’on s’allonge normalement aident à interpréter une posture. Vérifie qu’une chute vers le sol à côté d’un lit ou d’un canapé reste détectable.
+- Attribue un identifiant d’incident au moment où la chute probable est confirmée. Il reste stable si un identifiant de suivi change. Une pose masquée ou une caméra indisponible est un état distinct d’une reprise de posture.
+- Démarre une fois le décompte de **10 secondes par défaut**, réglable. Il continue si la caméra se coupe après confirmation. Hors incident, une panne caméra produit un statut de surveillance indisponible. Fermer la fenêtre d’alerte ne vaut pas annulation.
+- Sérialise la décision d’envoyer et celle d’annuler dans le moteur d’incident. Si une annulation manuelle ou une reprise de posture fiable et soutenue est enregistrée avant l’échéance et avant la soumission, bloque l’envoi. Lorsque la soumission a commencé, expose l’état réel du SMS et permets la clôture locale.
+- Garde le même incident tant que la personne reste au sol. Une fois l’incident traité, une reprise de posture fiable ou une clôture manuelle le termine. Après une clôture ou une annulation, le réarmement exige une posture de départ exploitable suivie d’une nouvelle transition pour déclencher une autre alerte.
+
+## Voix et SMS
+
+- Lis un WAV français préenregistré une seule fois à l’ouverture d’un incident. Le test sonore agit uniquement sur l’audio. Si le son échoue, affiche **Voix indisponible** et poursuis le décompte. Si le SMS échoue, l’alerte locale reste disponible.
+- Fais de **Simulé** le mode par défaut. La lecture MP4, la simulation d’incident et les tests automatisés restent sans envoi réel, même si des identifiants Twilio existent. Applique cette règle à la frontière d’envoi et vérifie-la dans les tests. Le mode réel exige une activation explicite et une configuration valide.
+- N’envoie jamais de SMS réel depuis un outil de développement ou une recette d’agent sans demande explicite pour cet envoi et destinataire convenu. Dans l’application, le bouton de test SMS réel est distinct de la simulation et du test sonore.
+- Soumets une seule fois par incident et par destinataire. Enregistre durablement l’intention d’envoi avant l’appel réseau pour qu’un autre traitement ne puisse pas le répéter. En cas de délai réseau dépassé ou de redémarrage laissant un doute après cette étape, conserve l’état incertain et évite un renvoi automatique. Enregistre l’identifiant fournisseur dès qu’il est disponible et utilise-le pour consulter le statut.
+- Distingue **Simulé**, **En attente**, **Livré**, **Échec** et **Livraison inconnue**. Une requête acceptée ou un statut `sent` laisse la livraison à confirmer. Seul un retour explicite de livraison autorise **Livré**. Pour le SMS sortant, suis le modèle de `PRODUCT.md` avec le prénom, l’heure locale de l’incident en `HH:mm` et l’adresse configurée.
+
+## Réponses SMS et interprétation par l’IA
+
+- Pour le prototype Windows, privilégie la lecture périodique de l’API Messages Twilio en arrière-plan. Filtre les messages entrants par contact, numéro Twilio et date, puis déduplique par identifiant de message. Si un webhook est ajouté, valide `X-Twilio-Signature` avec le SDK avant de traiter le contenu. Garde la réception distincte des statuts de livraison.
+- Associe la réponse dans le moteur d’incident avant d’appeler l’IA. Vérifie l’expéditeur configuré, le destinataire, l’heure réelle du message et l’existence d’une alerte soumise. Les réponses en retard ou ambiguës ne doivent pas être affectées automatiquement à un autre incident. Une réponse plus ancienne reçue hors ordre ne remplace pas une mise à jour plus récente.
+- Traite le SMS entrant comme du texte externe. Donne au modèle uniquement le texte à interpréter, sans numéros ni adresse de configuration. Valide une sortie structurée composée d’un état autorisé et d’un délai optionnel explicitement annoncé. Les questions, les négations, les messages contradictoires et les échecs d’analyse doivent être traités. Si un modèle distant est retenu, documente les données envoyées à ce fournisseur.
+- Affiche sur l’écran de détection l’état du proche, le délai annoncé s’il est connu et l’heure de réception. En cas de lecture ou d’interprétation indisponible, indique-le à l’écran. Un SMS entrant ne ferme pas l’incident et ne modifie pas la détection ni la voix locale.
+
+## Écran de surveillance et logs
+
+- Suis la disposition de `PRODUCT.md`. Garde la prédiction de posture en haut de la colonne droite et les logs en bas. Le panneau d’alerte au milieu apparaît uniquement pendant un incident avec une alerte active. Quand il se replie, les logs récupèrent sa place.
+- Affiche la posture fournie par le moteur de détection. Les libellés de posture comme `STANDING`, `WALKING` et `FALLING` reprennent les vidéos de référence. Affiche un état explicite quand la posture est indéterminée ou qu’aucune personne n’est détectée. La prédiction de posture et l’état de l’incident restent indépendants.
+- Horodate les entrées du journal de détection et garde leur ordre. En mode MP4, indique aussi le temps dans le fichier pour les événements associés aux images. Branche **Tout copier** sur le journal filtré des données sensibles de la session entière, indépendamment des lignes visibles. Affiche une confirmation après écriture dans le presse-papiers.
+
+## Données locales
+
+- Traite les images et la pose en mémoire. Par défaut, l’historique conserve les événements, les transitions, les erreurs utiles et le statut de livraison. Il doit pouvoir être effacé localement.
+- Garde les vidéos privées, les enregistrements personnels, les numéros complets et les secrets hors du dépôt. Utilise des valeurs factices dans les tests et exemples. Masque les numéros et les secrets dans les logs, y compris les messages d’erreur du fournisseur.
+- Ne lis, n’affiche et ne partage jamais les valeurs des fichiers `.env` ou les secrets du poste. Si une variable d’environnement est ajoutée ou renommée, documente son nom, son rôle et son caractère obligatoire dans `.env.example`, avec une valeur vide ou factice. Vérifie que les fichiers locaux contenant des secrets sont ignorés par Git.
+- N’ajoute pas de télémétrie, de reconnaissance faciale, de commande par microphone ni de transfert d’images sans demande produit explicite. Les cinq vidéos de référence guident la conception. Utilise des fichiers locaux autorisés pour les essais et garde leurs chemins propres au poste dans la configuration.
+
+## Vérification avant de livrer
+
+Avant de modifier un comportement, identifie le scénario de `PRODUCT.md` correspondant. Pour une modification de la logique d’alerte, couvre les transitions concernées avec une horloge contrôlable et un adaptateur SMS simulé. Les tests ne doivent dépendre ni d’un périphérique, ni d’Internet, ni d’un délai réel de dix secondes.
+
+| Partie touchée | Vérification attendue |
+| --- | --- |
+| Détection ou seuils | Tester des chutes debout, assises et lentes, ainsi que la marche, l’assise, l’accroupissement, le lit et la perte de pose. Utiliser les MP4 de référence pour rejouer les situations et des séquences indépendantes pour évaluer le résultat. |
+| Décompte, annulation ou réarmement | Tester l’échéance, l’annulation juste avant et après la décision d’envoi, la perte caméra après confirmation, le changement de suivi, le maintien au sol et la chute suivante. Vérifier qu’aucun doublon n’est créé. |
+| Voix, SMS ou configuration | Vérifier un WAV absent, un SMS refusé, un envoi réseau au résultat inconnu et une confirmation de livraison. Vérifier que le mode simulation reste isolé du fournisseur, avec une configuration SMS valide factice. |
+| Réponse SMS et IA | Simuler un trajet avec et sans délai, un « OK » ambigu, une négation, une correction, un échec du modèle, un expéditeur inattendu, un doublon et une réponse tardive. Vérifier l’association à l’incident et la notification. Le test sur téléphone couvre aussi le SMS retour. |
+| Interface ou périphériques | Vérifier la prédiction affichée, le repli du panneau d’alerte au repos et la copie des logs horodatés hors écran. Vérifier que les actions restent visibles pendant le décompte et les pannes. La recette sur le poste cible confirme le cadrage, la voix audible et, si l’envoi a été autorisé, la réception sur le téléphone convenu. |
+
+Sur la vision, relève les chutes manquées, les fausses alertes par heure et le délai entre le contact au sol et le déclenchement de la voix. Suis séparément la soumission et la livraison des SMS. Utilise des vidéos ou des mises en scène sécurisées pour les chutes de recette. Un test simulé valide le comportement exercé par le test. La reconnaissance dans la pièce, l’audibilité et la réception sur téléphone exigent des vérifications distinctes.
+
+Avant de conclure, relis le diff, lance les vérifications applicables et indique celles qui ont réellement été exécutées. Si un test exige un périphérique, un fichier ou un service indisponible, précise ce qui reste à vérifier. Liste les noms des variables d’environnement ajoutées ou renommées quand la modification en introduit.
