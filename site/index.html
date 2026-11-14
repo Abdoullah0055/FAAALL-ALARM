@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="FAAALL-ALARM, prototype de surveillance locale et d’alerte par SMS pour prévenir un proche en cas de chute probable.">
+  <meta name="theme-color" content="#edf2f8">
+  <title>FAAALL-ALARM · Prévenir un proche en cas de chute</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="demo.js" defer></script>
+</head>
+<body>
+  <header class="masthead wrap">
+    <a class="wordmark" href="#accueil"><span class="signal" aria-hidden="true"></span> FAAALL-ALARM</a>
+    <nav aria-label="Navigation principale"><a href="#fonctionnement">Fonctionnement</a></nav>
+  </header>
+  <main id="accueil">
+    <section class="hero wrap" aria-labelledby="title">
+      <div class="introduction">
+        <p class="platform">Prototype Windows</p>
+        <h1 id="title">En cas de chute,<br>prévenir un proche.</h1>
+        <p>Une webcam surveille une pièce avec votre accord. Le PC donne l’alerte à voix haute, puis prévient le proche que vous avez choisi.</p>
+        <a class="button" href="#simulation">Essayer la simulation</a>
+      </div>
+      <section class="console" id="simulation" aria-labelledby="demo-title">
+        <div class="console-head">
+          <h2 id="demo-title">L’alerte et la réponse</h2>
+          <p>Simulation · exemples fictifs</p>
+        </div>
+        <ol class="relay">
+          <li>
+            <h3>Sur le PC</h3>
+            <p>Chute possible détectée. Une voix invite Marie à annuler si tout va bien.</p>
+          </li>
+          <li data-step="sent">
+            <h3>Sur le téléphone du proche</h3>
+            <p class="bubble">ALERTE : MARIE EST TOMBÉE À 14:32 à 123, rue Exemple, Montréal !</p>
+          </li>
+          <li data-step="replied">
+            <h3>La réponse revient sur le PC</h3>
+            <p class="bubble reply">Je suis en route, j’arrive dans environ 20 minutes.</p>
+          </li>
+        </ol>
+        <div class="console-actions">
+          <button type="button" id="demo-action" hidden>Simuler l’envoi du SMS</button>
+          <p role="status" id="demo-status">Les messages ci-dessus illustrent la simulation.</p>
+        </div>
+      </section>
+    </section>
+    <section class="process wrap" id="fonctionnement" aria-labelledby="process-title">
+      <h2 id="process-title">De la pièce au proche</h2>
+      <dl>
+        <div><dt>La détection reste sur le PC</dt><dd>La caméra fixe suit l’évolution de la posture. Le PC traite les images sur place et les conserve en mémoire pendant l’analyse.</dd></div>
+        <div><dt>Une voix et un délai pour annuler</dt><dd>Lors d’une chute probable, une voix française se fait entendre. Le délai est réglable et commence à 10 secondes par défaut.</dd></div>
+        <div><dt>Le proche répond par SMS</dt><dd>Si l’alerte se poursuit, le proche reçoit un SMS. Sa réponse peut afficher sur le PC une prise en charge et le délai qu’il annonce.</dd></div>
+      </dl>
+      <aside class="prototype">
+        <h3>Ce que vous pouvez essayer</h3>
+        <p>Le prototype Windows permet de modifier les réglages et de simuler l’aller-retour SMS. La détection sur webcam et la voix pendant un incident sont en cours d’intégration. Le test sonore demande eSpeak NG. L’envoi réel demande une configuration Twilio et une vérification sur le téléphone du proche.</p>
+      </aside>
+    </section>
+  </main>
+  <footer class="wrap">FAAALL-ALARM est un dispositif d’appoint. La surveillance suppose un PC éveillé, une caméra opérationnelle et l’accord de la personne surveillée.</footer>
+</body>
+</html>
