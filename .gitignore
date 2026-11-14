@@ -20,6 +20,7 @@ CLAUDE.local.md
 /artifacts/
 /logs/
 /sms-logs.txt
+/telegram-logs.txt
 *.mp4
 *.mov
 *.avi

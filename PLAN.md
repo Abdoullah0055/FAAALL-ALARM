@@ -41,6 +41,7 @@ Avant toute modification, vérifiez votre branche avec `git branch --show-curren
 ## Lot 2 — Abdoullah
 
 - [x] **SMS bidirectionnels.** Adaptateurs simulé et Twilio, format de l’alerte, suivi, lecture des réponses et reprise sans renvoi. Vérifié avec transport factice. La recette téléphone reste ouverte.
+- [ ] **Canal Telegram.** Association BotFather, alertes et réponses citées dans un chat privé. Raccordement factice couvert. Relecture du contrat par Adam et recette iPhone à effectuer.
 - [x] **Interprétation OpenAI.** Modèle configurable, données documentées dans `.env.example`, sortie validée, fallback de panne et cas de recette testés avec transport factice. L’appel réel reste à vérifier.
 - [x] **Page Réglages autonome.** Contrôles, validation, persistance, aperçu fictif, test sonore et actions SMS. Recette Tk Windows effectuée en simulation.
 - [x] **Branchement des Réglages et des SMS à la surveillance d’Adam.** Appliqué selon le [contrat d’intégration](docs/integration-lot-2.md) : voir [docs/RACCORDEMENT.md](docs/RACCORDEMENT.md). L’essai réel sur téléphone reste ouvert.

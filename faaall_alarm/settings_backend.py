@@ -13,7 +13,7 @@ from pathlib import Path
 
 import cv2
 
-from .config import AppConfig, apply_config, read_config, validate_config
+from .config import TELEGRAM_MODE, AppConfig, apply_config, read_config, validate_config
 from .core import MonitoringCore
 from .model import SourceKind
 from .settings import FULL_FRAME, LocalSettings, Settings
@@ -62,7 +62,7 @@ def config_values_from_settings(settings: Settings) -> dict[str, object]:
         "voice_volume": settings.volume,
         "countdown_seconds": float(settings.countdown_seconds),
         "sms_mode": str(settings.sms_mode),
-        "sms_live_confirmed": str(settings.sms_mode) == "live",
+        "sms_live_confirmed": str(settings.sms_mode) != "simulated",
         "monitored_first_name": settings.first_name, "alert_address": settings.address,
         "contact_name": settings.contact_name, "contact_number": settings.recipient,
         "twilio_number": settings.sender,
@@ -80,10 +80,24 @@ class AppSettingsBackend:
         self._latest_image = latest_image
         self._config_path = config_path
 
+    @property
+    def allows_telegram_test(self) -> bool:
+        return self._source_kind is SourceKind.WEBCAM
+
+    @property
+    def requires_real_channel(self) -> bool:
+        return self._source_kind is SourceKind.WEBCAM
+
+    @property
+    def telegram_pairing_allowed(self) -> bool:
+        return self._core.engine.view() is None
+
     def load(self) -> Settings:
         return settings_from_config(self._core.config)
 
     def validate(self, settings: Settings) -> dict[str, str]:
+        if self.requires_real_channel and settings.sms_mode not in ("live", TELEGRAM_MODE):
+            return {"sms_mode": "La webcam exige Telegram ou SMS Twilio."}
         errors = self._services.validate(settings)
         if errors:
             return errors
@@ -93,6 +107,8 @@ class AppSettingsBackend:
         return errors
 
     def apply(self, settings: Settings) -> None:
+        if settings.sms_mode == TELEGRAM_MODE and not self.telegram_pairing_allowed:
+            raise ValueError("Attendez la fin de l’incident avant d’activer Telegram.")
         if self.validate(settings):
             raise ValueError("Vérifiez les réglages indiqués.")
         result = apply_config(config_values_from_settings(settings), self._config_path, self._core.apply_config)

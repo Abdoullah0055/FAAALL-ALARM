@@ -36,6 +36,8 @@ def posture_caption(persons: list[PersonView]) -> str:
 def sms_status_text(view: IncidentView) -> str:
     if view.sms_status is None:
         return "SMS : envoi à l'échéance du décompte"
+    if view.sms_status in (SmsStatus.TELEGRAM_ACCEPTED, SmsStatus.TELEGRAM_UNKNOWN):
+        return view.sms_status.value
     suffix = " · livraison à confirmer" if view.sms_status is SmsStatus.PENDING else ""
     return f"SMS : {view.sms_status.value}{suffix}"
 

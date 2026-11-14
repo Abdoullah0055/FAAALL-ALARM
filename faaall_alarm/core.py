@@ -24,7 +24,7 @@ from .sms_contract import (
 )
 from .voice import Voice, VoiceResult
 
-_FINAL_SMS_STATUSES = (SmsStatus.DELIVERED, SmsStatus.FAILED)
+_FINAL_SMS_STATUSES = (SmsStatus.DELIVERED, SmsStatus.FAILED, SmsStatus.TELEGRAM_ACCEPTED)
 
 
 ServicesFactory = Callable[[AppConfig], tuple[SmsGateway, ReplyInterpreter, Voice]]

@@ -23,6 +23,8 @@ class SmsStatus(str, Enum):
     DELIVERED = "Livré"
     FAILED = "Échec"
     UNKNOWN = "Livraison inconnue"
+    TELEGRAM_ACCEPTED = "Accepté par Telegram"
+    TELEGRAM_UNKNOWN = "Envoi Telegram incertain"
 
 
 class SmsAvailability(str, Enum):
@@ -32,6 +34,8 @@ class SmsAvailability(str, Enum):
     UNAVAILABLE = "SMS indisponible"
     SIMULATED = "SMS simulé"
     UNVERIFIED = "SMS non vérifié"
+    TELEGRAM_OPERATIONAL = "Bot Telegram accessible"
+    TELEGRAM_UNAVAILABLE = "Telegram indisponible"
 
 
 class ReplyState(str, Enum):
@@ -71,6 +75,7 @@ class IncomingSms:
     recipient: str
     body: str
     received_at: datetime  # heure réelle du message, pas l'heure de lecture
+    incident_ref: str | None = None  # référence résolue par un canal à réponses citées
 
 
 @dataclass(frozen=True)

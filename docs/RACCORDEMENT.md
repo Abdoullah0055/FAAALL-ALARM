@@ -36,3 +36,10 @@ Le SMS réel exige `sms_mode = live`, l'activation explicite (choisir **Réel** 
 ## Contrat interne du moteur (pour les tests)
 
 `SmsGateway` et `ReplyInterpreter` ([sms_contract.py](../faaall_alarm/sms_contract.py)) sont les protocoles que consomme le moteur. `tests/contracts.py` fournit `assert_gateway_contract` et `assert_interpreter_contract`, utilisés avec les adaptateurs du lot 2. Le moteur n'a aucune dépendance directe au lot 2 : seuls `adapters.py`, `integration.py` et `settings_backend.py` l'importent.
+## Raccordement Telegram
+
+Abdoullah fournit `TelegramGateway` dans `faaall_alarm/telegram.py`. `build_sms_gateway` le sélectionne pour une webcam avec `sms_mode="telegram"` et activation explicite. `submit_alert(request: AlertRequest) -> SmsSubmission` conserve l’intention en SQLite avant `sendMessage`. Une alerte fictive peut renvoyer `TELEGRAM_ACCEPTED` avec `provider_ref="telegram:42"`. Un refus renvoie `FAILED` et un délai dépassé `TELEGRAM_UNKNOWN`.
+
+`fetch_replies(since)` renvoie des `IncomingSms` dont `incident_ref` est renseigné uniquement après vérification du chat, du message cité et de l’horodatage. Adam vérifie côté surveillance que cette référence correspond à l’incident actif et que la réponse déclenche l’interprétation sans clore l’incident. La réponse au test suit le même lecteur, dans une file distincte.
+
+Configurer `TELEGRAM_BOT_TOKEN` selon le README. Recette simulée avec `.\scripts\test.ps1 tests/test_telegram.py`, puis recette sur l’iPhone convenu pour la notification et la réponse. Aucun serveur webhook ni migration manuelle. L’installation crée `telegram.sqlite3` dans le dossier de données local.

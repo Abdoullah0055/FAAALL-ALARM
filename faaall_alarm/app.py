@@ -13,7 +13,8 @@ import numpy as np
 from .capture import FrameSource, VideoFileSource, WebcamSource
 from .clock import SystemClock
 from .config import (
-    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_LIVE, AppConfig, DetectionThresholds, read_config,
+    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_SIMULATED, TELEGRAM_MODE,
+    AppConfig, DetectionThresholds, read_config,
 )
 from .core import MonitoringCore
 from .diagnostics import DiagnosticWriter
@@ -103,7 +104,9 @@ class MonitoringApp:
             overrides["camera_index"] = options.camera_index
         if options.countdown_seconds is not None:
             overrides["countdown_seconds"] = options.countdown_seconds
-        if kind is not SourceKind.WEBCAM and base.sms_mode == SMS_MODE_LIVE:
+        if kind is SourceKind.WEBCAM and base.sms_mode == SMS_MODE_SIMULATED:
+            overrides.update(sms_mode=TELEGRAM_MODE, sms_live_confirmed=False)
+        elif kind is not SourceKind.WEBCAM and base.sms_mode != SMS_MODE_SIMULATED:
             overrides["sms_mode"] = "simulated"  # sans webcam, jamais de SMS réel
         return AppConfig(**{**base.to_dict(), **overrides}), kind
 

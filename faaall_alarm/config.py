@@ -27,7 +27,8 @@ DEFAULT_HISTORY_PATH = PROJECT_ROOT / "data" / "history.jsonl"
 
 SMS_MODE_SIMULATED = "simulated"
 SMS_MODE_LIVE = "live"
-SMS_MODES = (SMS_MODE_SIMULATED, SMS_MODE_LIVE)
+TELEGRAM_MODE = "telegram"
+SMS_MODES = (SMS_MODE_SIMULATED, SMS_MODE_LIVE, TELEGRAM_MODE)
 
 DEFAULT_VOICE_MESSAGE = (
     "Une chute possible a été détectée. Si tout va bien, appuyez sur Annuler l'alerte."
@@ -286,16 +287,17 @@ def validate_config(values: Mapping[str, Any], *, strict_live: bool = True) -> l
             report(name, f"{label} : utiliser le format international, par exemple +15145550123.")
 
     if merged["sms_mode"] not in SMS_MODES:
-        report("sms_mode", "Mode SMS : choisir « simulated » (simulé) ou « live » (réel).")
-    elif strict_live and merged["sms_mode"] == SMS_MODE_LIVE:
+        report("sms_mode", "Choisissez Simulé, SMS Twilio ou Telegram.")
+    elif strict_live and merged["sms_mode"] != SMS_MODE_SIMULATED:
         if not merged["sms_live_confirmed"]:
             report("sms_live_confirmed", "Le mode réel exige une activation explicite.")
-        for name, label in (
+        required = [
             ("monitored_first_name", "Prénom"),
             ("alert_address", "Adresse d'intervention"),
-            ("contact_number", "Numéro du proche"),
-            ("twilio_number", "Numéro Twilio"),
-        ):
+        ]
+        if merged["sms_mode"] == SMS_MODE_LIVE:
+            required.extend((("contact_number", "Numéro du proche"), ("twilio_number", "Numéro Twilio")))
+        for name, label in required:
             if not merged[name]:
                 report(name, f"{label} : requis en mode réel.")
 

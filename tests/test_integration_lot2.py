@@ -144,7 +144,16 @@ def backend(tmp_path):
     runner = ScenarioRunner(get_scenario("chute_debout"), config=AppConfig())
     services = LocalSettings(tmp_path / "reglages.json", {})
     path = tmp_path / "config.local.json"
-    return AppSettingsBackend(runner.core, services, SourceKind.WEBCAM, lambda: None, path), runner.core, path
+    return AppSettingsBackend(runner.core, services, SourceKind.VIDEO_FILE, lambda: None, path), runner.core, path
+
+
+def test_webcam_settings_reject_simulated_channel(backend):
+    offline, core, path = backend
+    webcam = AppSettingsBackend(core, offline._services, SourceKind.WEBCAM, lambda: None, path)
+    assert "sms_mode" in webcam.validate(Settings())
+    with pytest.raises(ValueError):
+        webcam.apply(Settings())
+    assert not path.exists()
 
 
 def test_reglages_charger_valider_appliquer_et_rouvrir(backend):

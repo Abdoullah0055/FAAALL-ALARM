@@ -13,6 +13,7 @@ from tkinter import messagebox, ttk
 from time import monotonic
 from uuid import uuid4
 
+from .config import TELEGRAM_MODE
 from .demo import Demo
 from .http import ServiceError
 from .replies import DEMO_REPLY, OpenAI, ReplyTarget, associate, newer
@@ -20,6 +21,9 @@ from .settings import FULL_FRAME, LocalSettings, Settings, SettingsPort
 from .sms import (Alert, Delivery, Mode, POLL_SECONDS, REPLY_AMBIGUITY_WINDOW,
                   REPLY_WINDOW, SmsService, Source, Submission, twilio_diagnostic)
 from .sms_log import SMS_LOG_PATH, write_sms_log
+from .telegram import TelegramError, telegram_channel
+
+_CHANNELS = {"Simulé": Mode.SIMULATED, "SMS Twilio": Mode.LIVE, "Telegram": TELEGRAM_MODE}
 
 
 def test_result_label(submission: Submission) -> str:
@@ -49,6 +53,9 @@ class SettingsPage:
         self.deadline = 0
         self.demo_running = False
         self.real_test_running = False
+        self.telegram = telegram_channel(state_dir, services.config.get("TELEGRAM_BOT_TOKEN") or "")
+        self.telegram_busy = False
+        self.telegram_test = None
         self.preview_image = None
         window.title("Réglages · FAAALL-ALARM")
         window.minsize(590, 590)
@@ -69,8 +76,9 @@ class SettingsPage:
         ttk.Label(content, text="Réglages", font=("Segoe UI", 22, "bold")).pack(anchor="w", pady=(0, 10))
         tabs = ttk.Notebook(content)
         tabs.pack(fill="both", expand=True)
-        camera, voice, sms, demo = (ttk.Frame(tabs, padding=14) for _ in range(4))
-        for tab, label in zip((camera, voice, sms, demo), ("Caméra et zones", "Voix et délai", "SMS", "Simulation")):
+        camera, voice, sms, telegram, demo = (ttk.Frame(tabs, padding=14) for _ in range(5))
+        for tab, label in zip((camera, voice, sms, telegram, demo),
+                              ("Caméra et zones", "Voix et délai", "SMS", "Telegram", "Simulation")):
             tabs.add(tab, text=label)
             tab.columnconfigure(1, weight=1)
 
@@ -89,8 +97,9 @@ class SettingsPage:
         self.field(voice, 2, "countdown_seconds", "Décompte (secondes)", settings.countdown_seconds)
         ttk.Button(voice, text="Tester le son", command=self.sound).grid(row=3, sticky="w", pady=8)
 
-        self.field(sms, 0, "sms_mode", "Mode SMS",
-                   "Réel" if settings.sms_mode == Mode.LIVE else "Simulé", ("Simulé", "Réel"))
+        channels = ("Telegram", "SMS Twilio") if getattr(backend, "requires_real_channel", False) else tuple(_CHANNELS)
+        selected = next((label for label in channels if _CHANNELS[label] == settings.sms_mode), channels[0])
+        self.field(sms, 0, "sms_mode", "Canal d’alerte", selected, channels)
         self.field(sms, 1, "first_name", "Prénom surveillé", settings.first_name)
         self.field(sms, 2, "address", "Adresse d’intervention", settings.address)
         self.field(sms, 3, "contact_name", "Nom du proche", settings.contact_name)
@@ -104,6 +113,22 @@ class SettingsPage:
             row=7, columnspan=2, sticky="w")
         ttk.Label(sms, text="Journal local · sms-logs.txt à la racine du projet.").grid(
             row=8, columnspan=2, sticky="w", pady=8)
+        self.telegram_status = tk.StringVar(window, "Créez un bot dédié avec @BotFather et /newbot.")
+        ttk.Label(telegram, text="Configurez TELEGRAM_BOT_TOKEN dans le fichier .env local, puis "
+                  "relancez l’application. Pour les alertes, choisissez Telegram dans l’onglet SMS "
+                  "et enregistrez les réglages.", wraplength=490, justify="left").grid(
+                      row=0, columnspan=2, sticky="w", pady=(0, 12))
+        ttk.Button(telegram, text="Associer un proche", command=self.start_telegram_pairing).grid(
+            row=1, sticky="w")
+        ttk.Button(telegram, text="Envoyer un message de test", command=self.send_telegram_test).grid(
+            row=1, column=1, sticky="w")
+        self.telegram_link = ttk.Entry(telegram, width=58, state="readonly")
+        self.telegram_link.grid(row=2, columnspan=2, sticky="ew", pady=8)
+        self.telegram_link_value = tk.StringVar(window)
+        self.telegram_link.configure(textvariable=self.telegram_link_value)
+        ttk.Button(telegram, text="Copier le lien", command=self.copy_telegram_link).grid(row=4, sticky="w", pady=8)
+        ttk.Label(telegram, textvariable=self.telegram_status, wraplength=490, justify="left").grid(
+            row=3, columnspan=2, sticky="w")
 
         ttk.Label(demo, text="Incident fictif", font=("Segoe UI", 15, "bold")).grid(sticky="w")
         ttk.Label(demo, text="Marie · 123, rue Exemple, Montréal").grid(row=1, sticky="w", pady=(4, 14))
@@ -156,7 +181,7 @@ class SettingsPage:
             self.rect("rest_zone") if self.value("rest_zone") else None,
             self.value("voice_path"), self.number("volume", "Le volume"),
             self.number("countdown_seconds", "Le décompte"),
-            Mode.LIVE if self.value("sms_mode") == "Réel" else Mode.SIMULATED,
+            _CHANNELS[self.value("sms_mode")],
             *(self.value(key) for key in ("first_name", "address", "contact_name", "recipient", "sender")),
         )
 
@@ -173,7 +198,7 @@ class SettingsPage:
             return
         self.status.set("Réglages enregistrés.")
 
-    def run(self, operation: Callable, completed: Callable, failed: Callable):
+    def run(self, operation: Callable, completed: Callable, failed: Callable, *, on_error=None):
         future = self.executor.submit(operation)
 
         def collect():
@@ -184,8 +209,11 @@ class SettingsPage:
                 return
             try:
                 result = future.result()
-            except Exception:
-                failed()
+            except Exception as error:
+                if on_error is None:
+                    failed()
+                else:
+                    on_error(error)
             else:
                 completed(result)
 
@@ -240,12 +268,146 @@ class SettingsPage:
                  lambda: self.status.set("Voix indisponible."))
 
     def sms_settings(self):
-        return replace(Settings(), sms_mode=Mode.LIVE if self.value("sms_mode") == "Réel"
+        return replace(Settings(), sms_mode=Mode.LIVE if self.value("sms_mode") == "SMS Twilio"
                        else Mode.SIMULATED,
                        sender=self.value("sender"), recipient=self.value("recipient"))
 
     def log_sms(self, event: str):
         write_sms_log(SMS_LOG_PATH, Source.MANUAL_SMS, event)
+
+    def telegram_error(self, error):
+        self.telegram.log(f"Réglages · opération interrompue ({type(error).__name__}).")
+        self.telegram_busy = False
+        self.telegram_test = None
+        self.telegram_link_value.set("")
+        if isinstance(error, TelegramError):
+            label = str(error)
+        elif isinstance(error, ServiceError):
+            label = {
+                401: "Jeton Telegram refusé. Vérifiez TELEGRAM_BOT_TOKEN.",
+                403: "Accès refusé. Vérifiez que le proche a démarré le bot.",
+                409: "Le bot est déjà utilisé par un autre lecteur ou par un webhook.",
+            }.get(error.status, "Telegram indisponible. Vérifiez la connexion et réessayez.")
+        else:
+            label = "Stockage ou traitement local Telegram indisponible."
+        self.telegram_status.set(label)
+
+    def run_telegram(self, operation, completed):
+        self.run(operation, completed, lambda: None, on_error=self.telegram_error)
+
+    def copy_telegram_link(self):
+        if link := self.telegram_link_value.get():
+            self.window.clipboard_clear()
+            self.window.clipboard_append(link)
+            self.telegram_status.set("Lien copié. Ouvrez-le avec le compte Telegram du proche.")
+
+    def start_telegram_pairing(self):
+        if self.telegram_busy:
+            return
+        if not getattr(self.backend, "telegram_pairing_allowed", True):
+            self.telegram_status.set("Attendez la fin de l’incident avant d’associer un proche.")
+            return
+        self.telegram_busy = True
+        self.telegram_status.set("Vérification du bot…")
+
+        def ready(link):
+            self.telegram_link_value.set(link)
+            self.telegram_status.set("Ouvrez ce lien sur l’iPhone du proche et touchez Démarrer.")
+            self.window.after(1000, self.poll_telegram_pairing)
+
+        self.run_telegram(self.telegram.start_pairing, ready)
+
+    def poll_telegram_pairing(self):
+        def checked(ready):
+            if not ready:
+                self.window.after(2000, self.poll_telegram_pairing)
+                return
+            self.telegram_link_value.set("")
+            if not getattr(self.backend, "telegram_pairing_allowed", True):
+                self.telegram_busy = False
+                self.telegram_status.set("Attendez la fin de l’incident puis recommencez l’association.")
+            elif messagebox.askyesno("Associer le proche",
+                                   "Confirmez-vous que le proche a ouvert le lien sur son iPhone ?",
+                                   parent=self.window, default="no"):
+                self.run_telegram(self.telegram.confirm_pairing, self.telegram_paired)
+            else:
+                self.telegram_busy = False
+                self.telegram.log("Association · confirmation refusée sur le PC.")
+                self.telegram_status.set("Association annulée.")
+
+        self.run_telegram(self.telegram.pairing_ready, checked)
+
+    def telegram_paired(self, _):
+        self.telegram_busy = False
+        self.telegram_status.set("Proche associé. Choisissez Telegram et enregistrez les réglages.")
+
+    def send_telegram_test(self):
+        if self.telegram_busy:
+            return
+        if not getattr(self.backend, "allows_telegram_test", True):
+            self.telegram_status.set("Le test Telegram réel est indisponible en lecture MP4 ou en démo.")
+            return
+        if not messagebox.askyesno("Test Telegram réel", "Envoyer un message au proche associé ?",
+                                   parent=self.window, default="no"):
+            return
+        self.telegram_busy = True
+        self.telegram_test = None
+        self.telegram_status.set("Envoi du message de test…")
+        incident = f"test-{uuid4()}"
+
+        def send():
+            chat = self.telegram.chat()
+            result = self.telegram.send(incident, "FAAALL-ALARM · Test. Répondez à ce message pour indiquer "
+                                        "si vous pouvez intervenir et dans combien de temps.", "test", chat)
+            return chat, result
+
+        def sent(result):
+            chat, submission = result
+            self.telegram_busy = False
+            self.telegram_status.set(submission.error or submission.status.value)
+            if submission.provider_ref:
+                self.telegram_test = (incident, chat, submission.submitted_at)
+                test = self.telegram_test
+                self.window.after(2000, lambda: self.poll_telegram_test(test))
+
+        self.run_telegram(send, sent)
+
+    def poll_telegram_test(self, test):
+        if self.telegram_test is not test:
+            return
+        incident, chat, since = test
+        if (datetime.now(timezone.utc) - since) >= REPLY_WINDOW:
+            self.telegram_test = None
+            self.telegram_status.set("Délai de réponse au test écoulé.")
+            return
+        model = self.services.model()
+        redact = tuple(self.value(key) for key in ("first_name", "address", "contact_name",
+                                                   "recipient", "sender"))
+
+        def check():
+            replies = self.telegram.replies("test", chat, since, incident)
+            if not replies:
+                return None
+            message = max(replies, key=lambda reply: reply.received_at)
+            interpretation = OpenAI(*model).interpret(message.body, redact=redact)
+            for reply in replies:
+                self.telegram.acknowledge_reply(reply.message_id)
+            return interpretation
+
+        def checked(interpretation):
+            if self.telegram_test is not test:
+                return
+            if interpretation is None:
+                self.window.after(3000, lambda: self.poll_telegram_test(test))
+            else:
+                self.telegram_test = None
+                self.telegram_status.set(f"Réponse au test · {interpretation.label()}")
+
+        def failed(error):
+            if self.telegram_test is test:
+                self.telegram_error(error)
+
+        self.run(check, checked, lambda: None, on_error=failed)
 
     def check_sms(self):
         settings = self.sms_settings()
@@ -265,7 +427,7 @@ class SettingsPage:
         config = self.services.sms(settings)
         if config.mode is not Mode.LIVE:
             self.log_sms("Soumission bloquée · mode simulé.")
-            self.real_result.set("Choisissez Réel pour envoyer un SMS de test.")
+            self.real_result.set("Choisissez SMS Twilio pour envoyer un SMS de test.")
             return
         if issues := config.issues():
             self.log_sms("Soumission bloquée · " + " ".join(issues))
