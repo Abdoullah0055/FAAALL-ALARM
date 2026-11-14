@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from .http import ServiceError, numeric_error_code, request_json
+from .sms_log import write_sms_log
 
 
 E164 = re.compile(r"\+[1-9][0-9]{7,14}")
@@ -70,7 +71,7 @@ class SmsConfig:
         return issues
 
 
-def twilio_diagnostic(error: ServiceError) -> str:
+def twilio_diagnostic(error: ServiceError, *, technical: bool = False) -> str:
     hints = {
         20003: "Vérifiez les identifiants et les droits du compte Twilio.",
         21211: "Vérifiez le numéro du proche.",
@@ -84,6 +85,8 @@ def twilio_diagnostic(error: ServiceError) -> str:
         details.append(f"HTTP {error.status}")
     if error.code is not None:
         details.append(f"code Twilio {error.code}")
+    if technical and error.response_format:
+        details.append(f"réponse {error.response_format}")
     hint = hints.get(error.code)
     if hint is None and error.status in {401, 403}:
         hint = hints[20003]
@@ -167,7 +170,7 @@ class _Twilio:
         result = self.transport(f"https://api.twilio.com{self.resource}.json", headers, body)
         sid = result.get("sid")
         if not isinstance(sid, str) or not MESSAGE_SID.fullmatch(sid):
-            raise ServiceError()
+            raise ServiceError(reason="réponse sans identifiant de message valide")
         state, diagnostic = self._message_status(result)
         return sid, state, diagnostic
 
@@ -243,12 +246,14 @@ class _Twilio:
 
 class SmsService:
     def __init__(self, database: Path, config: SmsConfig, source: Source, *,
-                 transport=request_json, now=lambda: datetime.now(timezone.utc)):
+                 transport=request_json, now=lambda: datetime.now(timezone.utc),
+                 log_path: Path | None = None):
         self.database = database
         self.config = config
         self.source = source
         self.transport = transport
         self.now = now
+        self.log_path = log_path
         self.simulated = config.mode is not Mode.LIVE or source not in {
             Source.CAMERA, Source.MANUAL_SMS,
         }
@@ -271,6 +276,10 @@ class SmsService:
         db.row_factory = sqlite3.Row
         return db
 
+    def _log(self, event: str) -> None:
+        if self.log_path is not None:
+            write_sms_log(self.log_path, self.source, event)
+
     def _twilio(self):
         if self.simulated:
             raise RuntimeError("Canal réseau désactivé pour cette source.")
@@ -281,19 +290,28 @@ class SmsService:
             return "SMS simulé"
         try:
             self._twilio().check(self.now())
-        except (ServiceError, ValueError):
+        except ServiceError as error:
+            self._log(f"Vérification du canal · {twilio_diagnostic(error, technical=True)}")
+            return "SMS indisponible"
+        except ValueError:
+            self._log("Vérification du canal bloquée · " + " ".join(self.config.issues()))
             return "SMS indisponible"
         return "SMS opérationnel"
 
     def check_diagnostic(self) -> str:
+        self._log("Vérification du canal demandée.")
         if self.simulated:
+            self._log("Vérification ignorée · mode simulé.")
             return "SMS simulé · choisissez Réel pour vérifier Twilio."
         if issues := self.config.issues():
+            self._log("Vérification bloquée · " + " ".join(issues))
             return "Configuration SMS\n" + "\n".join(issues)
         try:
             self._twilio().check(self.now())
         except ServiceError as error:
+            self._log(f"Vérification du canal · {twilio_diagnostic(error, technical=True)}")
             return f"Vérification du canal · {twilio_diagnostic(error)}"
+        self._log("Vérification réussie · accès à l’API Messages.")
         return "Twilio accessible · utilisez le SMS de test pour vérifier la livraison."
 
     def submit(self, alert: Alert, *, confirmed_test: bool = False) -> Submission:
@@ -305,6 +323,7 @@ class SmsService:
             message = ""
         else:
             if not self.config.valid():
+                self._log("Soumission bloquée · " + " ".join(self.config.issues()))
                 return Submission(alert.incident_id, Delivery.FAILED, attempted_at)
             if self.source is Source.MANUAL_SMS:
                 if confirmed_test is not True:
@@ -320,16 +339,21 @@ class SmsService:
             """, (alert.incident_id, self.recipient_key, initial, attempted_at.isoformat()))
             claimed = insertion.rowcount == 1
         if not claimed:
+            self._log("Soumission ignorée · intention déjà enregistrée.")
             return self.lookup(alert.incident_id)
         if self.simulated:
             return Submission(alert.incident_id, initial, attempted_at)
+        self._log("Soumission · intention enregistrée, POST Messages vers Twilio.")
         try:
             sid, state, diagnostic = self._twilio().submit(message)
+            self._log(f"Soumission · réponse reçue avec identifiant de message · {state}"
+                      + (f" · {diagnostic}" if diagnostic else "."))
         except ServiceError as error:
             # Une réponse 4xx explicite vaut refus, sauf un délai dépassé.
             rejected = error.status is not None and 400 <= error.status < 500 and error.status != 408
             sid, state = None, Delivery.FAILED if rejected else Delivery.UNKNOWN
             diagnostic = f"Soumission · {twilio_diagnostic(error)}"
+            self._log(f"Soumission · {state} · {twilio_diagnostic(error, technical=True)}")
         saved = self._save_result(Submission(alert.incident_id, state, attempted_at, sid))
         return replace(saved, diagnostic=diagnostic)
 
@@ -373,10 +397,15 @@ class SmsService:
         except ServiceError as error:
             state = Delivery.UNKNOWN
             diagnostic = f"Suivi de livraison · {twilio_diagnostic(error)}"
+            self._log(f"Suivi de livraison · {twilio_diagnostic(error, technical=True)}")
         if state is Delivery.PENDING and self.now() >= previous.attempted_at + DELIVERY_WINDOW:
             state = Delivery.UNKNOWN
+            diagnostic = "Aucune confirmation de livraison dans les 24 heures."
         saved = self._save_result(Submission(incident_id, state, previous.attempted_at,
                                              previous.provider_sid))
+        if saved.state is not previous.state:
+            self._log(f"Livraison · {previous.state} → {saved.state}"
+                      + (f" · {diagnostic}" if diagnostic and saved.state is state else "."))
         return replace(saved, diagnostic=diagnostic if saved.state is state else None)
 
     def inject_reply(self, body: str, sid: str, received_at: datetime) -> None:
@@ -392,7 +421,11 @@ class SmsService:
                           if since <= item.received_at <= until}
             messages = sorted(candidates.values(), key=lambda item: (item.received_at, item.sid))
         else:
-            messages = self._twilio().incoming(since, until)
+            try:
+                messages = self._twilio().incoming(since, until)
+            except ServiceError as error:
+                self._log(f"Lecture des réponses · {twilio_diagnostic(error, technical=True)}")
+                raise
         with closing(self._connect()) as db:
             return [item for item in messages if db.execute(
                 "SELECT 1 FROM seen_messages WHERE sid = ?", (item.sid,)

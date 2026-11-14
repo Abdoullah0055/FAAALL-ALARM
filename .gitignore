@@ -19,6 +19,7 @@ CLAUDE.local.md
 /models/
 /artifacts/
 /logs/
+/sms-logs.txt
 *.mp4
 *.mov
 *.avi

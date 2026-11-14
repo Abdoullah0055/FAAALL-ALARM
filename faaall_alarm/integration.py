@@ -17,6 +17,7 @@ from .model import SourceKind
 from .replies import OpenAI
 from .settings import STATE_DIR, LocalSettings, configuration
 from .sms import Mode, SmsConfig, SmsService, Source
+from .sms_log import SMS_LOG_PATH
 from .sms_contract import (
     AlertRequest, IncomingSms, ReplyInterpreter, SmsAvailability, SmsGateway, SmsStatus, SmsSubmission,
 )
@@ -81,7 +82,9 @@ def build_sms_gateway(
     options = {key: value for key, value in (("transport", transport), ("now", now)) if value is not None}
     service = SmsService(
         (state_dir or STATE_DIR) / SMS_DATABASE, sms_config(effective, environment),
-        source_override or _SOURCES[source_kind], **options,
+        source_override or _SOURCES[source_kind],
+        log_path=SMS_LOG_PATH if allowed and environment is None and transport is None else None,
+        **options,
     )
     gateway = SmsServiceGateway(service)
     return SendGuard(gateway, lambda: real_sms_allowed(config, source_kind), clock) if allowed else gateway

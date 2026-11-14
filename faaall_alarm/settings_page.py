@@ -19,6 +19,7 @@ from .replies import DEMO_REPLY, OpenAI, ReplyTarget, associate, newer
 from .settings import FULL_FRAME, LocalSettings, Settings, SettingsPort
 from .sms import (Alert, Delivery, Mode, POLL_SECONDS, REPLY_AMBIGUITY_WINDOW,
                   REPLY_WINDOW, SmsService, Source, Submission, twilio_diagnostic)
+from .sms_log import SMS_LOG_PATH, write_sms_log
 
 
 def test_result_label(submission: Submission) -> str:
@@ -101,6 +102,8 @@ class SettingsPage:
         self.real_result = tk.StringVar(window, "SMS non vérifié")
         ttk.Label(sms, textvariable=self.real_result, wraplength=500, justify="left").grid(
             row=7, columnspan=2, sticky="w")
+        ttk.Label(sms, text="Journal local · sms-logs.txt à la racine du projet.").grid(
+            row=8, columnspan=2, sticky="w", pady=8)
 
         ttk.Label(demo, text="Incident fictif", font=("Segoe UI", 15, "bold")).grid(sticky="w")
         ttk.Label(demo, text="Marie · 123, rue Exemple, Montréal").grid(row=1, sticky="w", pady=(4, 14))
@@ -241,13 +244,19 @@ class SettingsPage:
                        else Mode.SIMULATED,
                        sender=self.value("sender"), recipient=self.value("recipient"))
 
+    def log_sms(self, event: str):
+        write_sms_log(SMS_LOG_PATH, Source.MANUAL_SMS, event)
+
     def check_sms(self):
         settings = self.sms_settings()
         self.real_result.set("Vérification du canal…")
         self.run(lambda: SmsService(self.state_dir / "sms.sqlite3", self.services.sms(settings),
-                                    Source.MANUAL_SMS).check_diagnostic(), self.real_result.set,
-                 lambda: self.real_result.set(
-                     "Vérification impossible. Vérifiez l’accès au stockage local de l’application."))
+                                    Source.MANUAL_SMS, log_path=SMS_LOG_PATH).check_diagnostic(),
+                 self.real_result.set, self.sms_check_failed)
+
+    def sms_check_failed(self):
+        self.log_sms("Vérification interrompue · erreur locale.")
+        self.real_result.set("Vérification impossible. Vérifiez l’accès au stockage local de l’application.")
 
     def test_sms(self):
         if self.real_test_running:
@@ -255,21 +264,25 @@ class SettingsPage:
         settings = self.sms_settings()
         config = self.services.sms(settings)
         if config.mode is not Mode.LIVE:
+            self.log_sms("Soumission bloquée · mode simulé.")
             self.real_result.set("Choisissez Réel pour envoyer un SMS de test.")
             return
         if issues := config.issues():
+            self.log_sms("Soumission bloquée · " + " ".join(issues))
             self.real_result.set("SMS de test bloqué · configuration\n" + "\n".join(issues))
             return
         if not messagebox.askyesno("Envoi réel",
                                    f"Envoyer le SMS de test convenu au numéro se terminant par "
                                    f"{config.recipient[-4:]} ?", parent=self.window, default="no"):
+            self.log_sms("Soumission annulée avant l’envoi.")
             return
         self.real_test_running = True
         self.real_result.set("Soumission du SMS de test…")
         alert = Alert(f"test-{uuid4()}", datetime.now().astimezone(), "")
 
         def submit():
-            service = SmsService(self.state_dir / "sms.sqlite3", config, Source.MANUAL_SMS)
+            service = SmsService(self.state_dir / "sms.sqlite3", config, Source.MANUAL_SMS,
+                                 log_path=SMS_LOG_PATH)
             return service, service.submit(alert, confirmed_test=True)
 
         def started(result):
@@ -282,6 +295,7 @@ class SettingsPage:
 
         def failed():
             self.real_test_running = False
+            self.log_sms("Soumission interrompue · erreur locale, résultat non confirmé.")
             self.real_result.set(
                 "SMS de test · résultat indisponible. Vérifiez le stockage local et les journaux "
                 "Twilio avant de relancer le test.")
@@ -340,6 +354,7 @@ class SettingsPage:
                 self.real_test_running = False
 
         def failed():
+            self.log_sms("Suivi du SMS interrompu · erreur locale.")
             self.real_result.set(test_result_label(submission) + "\nSuivi du SMS interrompu.")
             schedule(submission, latest)
 

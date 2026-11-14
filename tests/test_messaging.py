@@ -31,8 +31,9 @@ class SmsTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.database = Path(directory.name) / "sms.sqlite3"
 
-    def service(self, transport, source=Source.CAMERA, config=CONFIG, now=NOW):
-        return SmsService(self.database, config, source, transport=transport, now=lambda: now)
+    def service(self, transport, source=Source.CAMERA, config=CONFIG, now=NOW, **options):
+        return SmsService(self.database, config, source, transport=transport, now=lambda: now,
+                          **options)
 
     def test_simulation_isolates_provider_even_with_valid_config(self):
         def forbidden(*args):
@@ -165,6 +166,31 @@ class SmsTests(unittest.TestCase):
         service.submit(ALERT, confirmed_test=True)
         self.assertIn("Livraison · code Twilio 30007",
                       sms_test_label(service.refresh(ALERT.incident_id)))
+
+    def test_local_log_reports_error_response_format_without_private_data(self):
+        path = self.database.with_name("sms-logs.txt")
+        private = (CONFIG.sender, CONFIG.recipient, CONFIG.account_sid, CONFIG.auth_token)
+
+        def reject(request, timeout):
+            payload = json.dumps({"message": " ".join(private)}).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS, log_path=path)
+            result = service.submit(ALERT, confirmed_test=True)
+        self.assertEqual(result.state, Delivery.FAILED)
+        started, failed = path.read_text(encoding="utf-8").splitlines()
+        self.assertIn("intention enregistrée", started)
+        self.assertIn("test SMS réel | Soumission · Échec · HTTP 400", failed)
+        self.assertIn("réponse JSON sans code exploitable", failed)
+        for value in private:
+            self.assertNotIn(value, started + failed)
+
+    def test_unwritable_log_does_not_change_submission_result(self):
+        service = self.service(lambda *args: {"sid": SID, "status": "queued"},
+                               log_path=self.database.parent)
+        self.assertEqual(service.submit(ALERT).state, Delivery.PENDING)
 
     def test_delivery_polling_failure_then_explicit_failure(self):
         def transport(url, headers, body=None):
