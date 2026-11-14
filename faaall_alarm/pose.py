@@ -23,7 +23,7 @@ class PoseEstimator(Protocol):
 class MediaPipePoseEstimator:
     """Enveloppe MediaPipe Pose Landmarker (modèle « lite », float16) en mode vidéo."""
 
-    def __init__(self, model_path: Path, max_people: int = 2) -> None:
+    def __init__(self, model_path: Path, max_people: int = 2, min_confidence: float = 0.5) -> None:
         if not Path(model_path).is_file():
             raise FileNotFoundError(
                 f"Modèle de pose introuvable : {model_path}. Lance scripts/install.ps1 pour le télécharger."
@@ -37,6 +37,9 @@ class MediaPipePoseEstimator:
             base_options=BaseOptions(model_asset_path=str(model_path)),
             running_mode=vision.RunningMode.VIDEO,
             num_poses=max_people,
+            min_pose_detection_confidence=min_confidence,
+            min_pose_presence_confidence=min_confidence,
+            min_tracking_confidence=min_confidence,
         )
         self._landmarker = vision.PoseLandmarker.create_from_options(options)
         self._last_timestamp_ms = -1

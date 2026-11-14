@@ -13,7 +13,7 @@ import numpy as np
 from .capture import FrameSource, VideoFileSource, WebcamSource
 from .clock import SystemClock
 from .config import (
-    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_LIVE, AppConfig, read_config,
+    DEFAULT_HISTORY_PATH, DEFAULT_MODEL_PATH, SMS_MODE_LIVE, AppConfig, DetectionThresholds, read_config,
 )
 from .core import MonitoringCore
 from .integration import build_interpreter, build_sms_gateway, real_sms_allowed
@@ -109,7 +109,7 @@ class MonitoringApp:
             self.config = AppConfig(**{**self.config.to_dict(), "lying_zones": [list(z) for z in scenario.lying_zones]})
             video = ensure_demo_video(scenario)
             return ScenarioPoseEstimator(scenario), VideoFileSource(video, self.clock)
-        estimator = MediaPipePoseEstimator(DEFAULT_MODEL_PATH)
+        estimator = MediaPipePoseEstimator(DEFAULT_MODEL_PATH, min_confidence=DetectionThresholds().pose_min_confidence)
         if options.video_path:
             return estimator, VideoFileSource(options.video_path, self.clock)
         return estimator, WebcamSource(self.config.camera_index, self.clock)

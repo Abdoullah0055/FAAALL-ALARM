@@ -10,7 +10,7 @@ import pytest
 from faaall_alarm.clock import ManualClock
 from faaall_alarm.detection import DetectionPipeline
 from faaall_alarm.incident import IncidentEngine, IncidentSettings
-from faaall_alarm.model import DetectionEvent, EventKind, FallCause
+from faaall_alarm.model import DetectionEvent, EventKind, FallCause, Posture
 from faaall_alarm.privacy import default_masker
 from faaall_alarm.simulation.runner import DEMO_CONTACT_NUMBER, DEMO_TWILIO_NUMBER
 from faaall_alarm.simulation.scenarios import Scenario, get_scenario
@@ -107,6 +107,24 @@ def analyse(scenario: Scenario, **pipeline_kwargs) -> list[DetectionEvent]:
         if scenario.camera_available(float(t)):
             events += pipeline.process(scenario.observation_at(float(t))).events
     return events
+
+
+def posture_timeline(scenario: Scenario, person_index: int = 0, **pipeline_kwargs) -> list[tuple[float, Posture]]:
+    """Posture affichée image par image pour une personne (par ordre de création de trace)."""
+    pipeline = DetectionPipeline(lying_zones=scenario.lying_zones, **pipeline_kwargs)
+    timeline: list[tuple[float, Posture]] = []
+    for t in scenario.frame_times():
+        if not scenario.camera_available(float(t)):
+            continue
+        persons = sorted(pipeline.process(scenario.observation_at(float(t))).persons, key=lambda p: p.track_id)
+        if len(persons) > person_index:
+            timeline.append((float(t), persons[person_index].posture))
+    return timeline
+
+
+def compress(values: list) -> list:
+    """Supprime les répétitions consécutives : [A, A, B, A] -> [A, B, A]."""
+    return [value for index, value in enumerate(values) if index == 0 or value != values[index - 1]]
 
 
 def kinds(events: list[DetectionEvent], kind: EventKind) -> list[DetectionEvent]:

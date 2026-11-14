@@ -10,7 +10,7 @@ from faaall_alarm.detection import DetectionPipeline
 from faaall_alarm.model import EventKind, FallCause, FrameObservation, Posture
 from faaall_alarm.simulation.scenarios import SCENARIOS, get_scenario
 
-from .conftest import analyse, kinds
+from .conftest import analyse, compress, kinds, posture_timeline
 
 FALL_SCENARIOS = ("chute_debout", "chute_assise", "affaissement_lent", "chute_pres_du_lit")
 
@@ -84,12 +84,25 @@ def test_contact_incertain_conserve_la_chute_avec_cause_indeterminee():
     assert [event.cause for event in confirmed] == [FallCause.UNDETERMINED]
 
 
-def test_perte_de_pose_avant_confirmation_ramene_a_l_indetermine():
-    scenario = get_scenario("chute_debout")
-    scenario.persons[0].hide(5.0, 8.0)  # le squelette disparaît pendant le maintien au sol
+def test_pose_masquee_apres_une_chute_rapide_au_sol_est_confirmee_sans_reprise():
+    # MediaPipe perd souvent la personne allongée : après un basculement rapide observé jusqu'au
+    # sol, la pose masquée confirme la chute au lieu d'effacer la suspicion.
+    scenario = get_scenario("chute_debout")  # au sol à 5,2 s
+    scenario.persons[0].hide(5.4, 9.0)
     events = analyse(scenario)
+    confirmed = kinds(events, EventKind.FALL_CONFIRMED)
+    assert len(confirmed) == 1 and "pose masquée" in confirmed[0].detail
+    assert 5.4 + DetectionThresholds().lost_after_fast_fall_confirm_s <= confirmed[0].timestamp_s < 9.0
+    assert not kinds(events, EventKind.PERSON_RECOVERED)
+
+
+def test_pose_perdue_apres_une_descente_lente_n_est_pas_confirmee_a_l_aveugle():
+    scenario = get_scenario("affaissement_lent")
+    scenario.persons[0].hide(6.0, 14.0)  # disparaît avant le maintien au sol
+    events = analyse(scenario)
+    assert kinds(events, EventKind.FALL_SUSPECTED)
+    assert not [e for e in kinds(events, EventKind.FALL_CONFIRMED) if e.timestamp_s < 14.0]
     assert kinds(events, EventKind.SUSPICION_CLEARED)
-    assert not kinds(events, EventKind.FALL_CONFIRMED)
 
 
 def test_reprise_de_posture_apres_chute_est_signalee_une_fois():
@@ -130,13 +143,18 @@ def test_bas_du_corps_hors_cadre_la_chute_reste_detectee():
     assert len(kinds(events, EventKind.FALL_CONFIRMED)) == 1
 
 
-def test_posture_affichee_suit_la_scene():
-    scenario = get_scenario("chute_debout")
-    pipeline = DetectionPipeline()
-    seen = set()
-    for t in scenario.frame_times():
-        seen |= {view.posture for view in pipeline.process(scenario.observation_at(float(t))).persons}
-    assert {Posture.STANDING, Posture.FALLING, Posture.LYING} <= seen
+def test_posture_affichee_suit_la_scene_dans_l_ordre_et_au_bon_moment():
+    # L'ordre et le moment comptent : STANDING avant la chute, FALLING pendant et juste après la
+    # descente (0,5 à 0,7 s), LYING ensuite, sans retour à une posture debout.
+    scenario = get_scenario("chute_debout")  # descente de 4,5 à 5,2 s
+    timeline = posture_timeline(scenario)
+    sequence = compress([p for _, p in timeline])
+    assert sequence[0] is Posture.STANDING and Posture.WALKING in sequence
+    assert sequence[-2:] == [Posture.FALLING, Posture.LYING]  # aucune posture debout après la chute
+    first_falling = next(t for t, p in timeline if p is Posture.FALLING)
+    first_lying = next(t for t, p in timeline if p is Posture.LYING)
+    assert 4.5 <= first_falling <= 5.2
+    assert first_falling < first_lying <= 7.5
 
 
 def test_aucune_pose_ne_cree_ni_personne_ni_evenement():
@@ -145,13 +163,27 @@ def test_aucune_pose_ne_cree_ni_personne_ni_evenement():
     assert analysis.persons == [] and analysis.events == []
 
 
+def _process_until(pipeline, scenario, until_s):
+    analysis = None
+    for t in scenario.frame_times():
+        if t > until_s:
+            break
+        analysis = pipeline.process(scenario.observation_at(float(t)))
+    return analysis
+
+
 def test_libelles_des_personnes():
-    pipeline = DetectionPipeline()
-    one = pipeline.process(get_scenario("chute_debout").observation_at(1.0))
+    one = _process_until(DetectionPipeline(), get_scenario("chute_debout"), 1.0)
     assert [view.label for view in one.persons] == ["Personne"]
-    pipeline = DetectionPipeline()
-    two = pipeline.process(get_scenario("collision_avec_chute").observation_at(1.0))
+    two = _process_until(DetectionPipeline(), get_scenario("collision_avec_chute"), 1.0)
     assert sorted(view.label for view in two.persons) == ["Personne 1", "Personne 2"]
+
+
+def test_une_nouvelle_personne_n_est_affichee_qu_apres_plusieurs_images():
+    scenario = get_scenario("chute_debout")
+    pipeline = DetectionPipeline()
+    shown = [bool(pipeline.process(scenario.observation_at(k / 15)).persons) for k in range(4)]
+    assert shown == [False, False, True, True]  # confirmée à la 3e observation
 
 
 def test_au_plus_deux_personnes_suivies():
