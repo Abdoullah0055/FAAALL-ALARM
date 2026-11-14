@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "faaall-alarm"
+version = "0.1.0"
+description = "Détection locale de chute, voix de synthèse française hors ligne et alerte SMS (écran Windows)."
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "mediapipe==1.2.3",
+    "opencv-contrib-python==5.0.0.93",
+    "numpy>=2.0",
+    "pillow>=10.0",
+    "python-dotenv==1.2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+faaall-alarm = "faaall_alarm.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["faaall_alarm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
