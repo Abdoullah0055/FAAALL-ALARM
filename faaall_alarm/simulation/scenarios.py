@@ -404,6 +404,28 @@ def crossing_with_occlusion() -> Scenario:
     return scenario
 
 
+def pick_up_behind_furniture() -> Scenario:
+    """Se baisser vite derrière un meuble (jambes masquées), disparaître, puis réapparaître debout."""
+    hidden_legs = replace(STANDING, lower_body_visible=False)
+    picking = replace(CROUCHING, torso_deg=75.0, hip_height_t=0.9, lower_body_visible=False)
+    person = Timeline(320, start=hidden_legs)
+    person.hold(2.5).go(0.45, picking).hold(3.5).go(0.6, hidden_legs).hold(3.0)
+    person.hide(3.2, 6.3)  # derrière le meuble, plus rien n'est visible
+    return Scenario("ramasser_derriere_meuble", "Se baisse vite derrière un meuble, disparaît puis se relève.",
+                    [person], person.end_t, expected="Aucun incident : la disparition n'est pas une chute.")
+
+
+def fall_while_crossing_occluded() -> Scenario:
+    """Chute lente pendant qu'une autre personne passe devant (occultation et proximité)."""
+    faller = Timeline(330)
+    faller.hold(2.0).go(4.0, replace(LYING, facing=1), x_px=400).hold(30.0)
+    walker = Timeline(80, start=replace(STANDING, depth_scale=1.15))
+    walker.hold(1.5).go(5.0, replace(STANDING, gait_deg=25.0, depth_scale=1.15), x_px=600).hold(30.0)
+    faller.hide(3.6, 4.6)
+    return Scenario("chute_lente_pendant_passage", "Affaissement lent masqué par une personne qui passe devant.",
+                    [faller, walker], faller.end_t, expected="Un incident, cause individuelle ou indéterminée.")
+
+
 # Incidents attendus et instant où les hanches touchent le sol (banc d'évaluation). Les reprises
 # attendues sont dans RECOVERIES ; ailleurs, aucune reprise ne doit être déclarée.
 EXPECTATIONS: dict[str, tuple[int, float | None]] = {
@@ -420,6 +442,7 @@ EXPECTATIONS: dict[str, tuple[int, float | None]] = {
     "chute_depuis_canape": (1, 3.9), "chute_hanches_zone_lit": (1, 5.2),
     "reprise_partielle_genoux": (1, 5.2), "reprise_assise_au_sol": (1, 5.2),
     "croisement_profondeurs": (0, None), "croisement_occulte": (0, None),
+    "ramasser_derriere_meuble": (0, None), "chute_lente_pendant_passage": (1, 6.0),
 }
 RECOVERIES = {"chute_puis_reprise": 1, "deux_chutes": 1}
 
@@ -460,6 +483,8 @@ SCENARIOS: dict[str, Callable[[], Scenario]] = {
     "reprise_assise_au_sol": partial_recovery_sitting_hidden_legs,
     "croisement_profondeurs": crossing_at_depths,
     "croisement_occulte": crossing_with_occlusion,
+    "ramasser_derriere_meuble": pick_up_behind_furniture,
+    "chute_lente_pendant_passage": fall_while_crossing_occluded,
 }
 
 

@@ -110,21 +110,44 @@ def classify_posture(
 
     if _is_lying(features, track, thresholds):
         return Posture.LYING
+    if track.fall_state is FallState.CONFIRMED and stays_low(features, track, thresholds):
+        # Personne tombée encore au sol, même si l'angle du torse ne le montre pas (chute vers la
+        # caméra) : la posture affichée ne doit pas redevenir assise ou debout.
+        return Posture.LYING
     if features.torso_angle_deg >= thresholds.sitting_max_torso_angle_deg:
         # Penché en avant, jambes sous le corps : debout si les jambes le confirment.
         if features.legs_visible and features.thigh_vertical_ratio >= thresholds.sitting_thigh_vertical_ratio:
             return Posture.STANDING
         return Posture.INDETERMINATE
-    if features.legs_visible and features.thigh_vertical_ratio < thresholds.sitting_thigh_vertical_ratio:
-        return Posture.SITTING
+    if (features.legs_visible
+            and thresholds.sitting_min_thigh_vertical_ratio <= features.thigh_vertical_ratio
+            < thresholds.sitting_thigh_vertical_ratio):
+        return Posture.SITTING  # des genoux nettement au-dessus des hanches ne sont pas une assise
+    if features.legs_visible and features.thigh_vertical_ratio < thresholds.sitting_min_thigh_vertical_ratio:
+        return Posture.INDETERMINATE
 
-    speed, scale_rate = track.ground_speed_torso(thresholds.walking_window_s, t)
-    if (speed >= thresholds.walking_speed_torso_per_s or scale_rate >= thresholds.walking_scale_rate_per_s
-            or track.leg_swing_torso(thresholds.walking_window_s, t) >= thresholds.walking_leg_swing_torso):
+    if _is_walking(features, track, t, thresholds):
         return Posture.WALKING
     if not features.legs_visible:
         return Posture.INDETERMINATE  # jambes masquées : debout et assis ne se distinguent pas
     return Posture.STANDING
+
+
+def _is_walking(features: BodyFeatures, track: PersonTrack, t: float, thresholds: DetectionThresholds) -> bool:
+    """Marche : alternance des pieds, ou déplacement net au sol (hanches, pieds, approche) torse droit.
+
+    Les hanches, et non le centre du torse, mesurent le déplacement : le torse avance quand on se
+    penche. Un déplacement avec le torse incliné est un changement de position sur place.
+    """
+    window = thresholds.walking_window_s
+    swing = track.leg_swing_torso(window, t)
+    if swing >= thresholds.walking_leg_swing_torso:
+        return True
+    speed, scale_rate = track.ground_speed_torso(window, t)
+    if speed < thresholds.walking_speed_torso_per_s and scale_rate < thresholds.walking_scale_rate_per_s:
+        return False
+    # Se pencher, s'asseoir ou se relever incline le torse ; en marchant, il reste droit.
+    return features.torso_angle_deg < thresholds.walking_max_torso_angle_deg
 
 
 class PostureSmoother:

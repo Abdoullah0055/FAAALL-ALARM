@@ -53,6 +53,9 @@ class FallDetector:
     ) -> list[DetectionEvent]:
         if features is None:
             return self.update_absent(track, t)
+        if track.pose_lost_since_t is not None and t - track.pose_lost_since_t > self._th.motion_max_gap_s:
+            # Le maintien au sol se mesure sur des observations : le temps masqué ne compte pas.
+            track.low_since_t = None
         track.pose_lost_since_t = None
         upright = is_upright(features, track, self._th) and posture is not Posture.LYING
         handler = {
@@ -65,14 +68,19 @@ class FallDetector:
 
     # -- images où la pose est absente ou inexploitable -------------------------------------------
     def update_absent(self, track: PersonTrack, t: float) -> list[DetectionEvent]:
-        track.upright_since_t = None
-        track.recovery_since_t = None
+        # Une image inexploitable isolée n'interrompt pas un maintien redressé (réarmement, reprise) ;
+        # une absence plus longue que `upright_break_s` le remet à zéro.
+        if t - track.last_seen_t > self._th.upright_break_s:
+            track.upright_since_t = None
+            track.recovery_since_t = None
         if track.fall_state is not FallState.SUSPECTED:
             return []
         if track.pose_lost_since_t is None:
             track.pose_lost_since_t = t
         lost_s = t - track.pose_lost_since_t
-        landed = track.last_seen_low or track.last_hip_drop_torso >= self._th.lost_confirm_min_drop_torso
+        # Confirmer sans voir la personne exige une descente des hanches jusqu'au sol : se baisser
+        # vite derrière un meuble puis disparaître fait descendre les hanches d'un torse au plus.
+        landed = track.last_hip_drop_torso >= self._th.lost_confirm_min_drop_torso
         if track.suspicion_fast and landed and not track.last_seen_near_edge and (
                 lost_s >= self._th.lost_after_fast_fall_confirm_s):
             return [self._confirm(track, t, "chute rapide jusqu'au sol puis pose masquée")]
@@ -82,8 +90,12 @@ class FallDetector:
 
     def _when_disarmed(self, track, t, features, posture, upright, size):
         if not upright:
-            track.upright_since_t = None
+            if track.not_upright_since_t is None:
+                track.not_upright_since_t = t
+            if t - track.not_upright_since_t >= self._th.upright_break_s:
+                track.upright_since_t = None  # posture non redressée soutenue : le maintien repart de zéro
             return []
+        track.not_upright_since_t = None
         if track.upright_since_t is None:
             track.upright_since_t = t
         if t - track.upright_since_t >= self._th.rearm_hold_s:
@@ -121,6 +133,9 @@ class FallDetector:
         track.contact_t = t
         track.low_since_t = t
         track.floor_hip_y_px.clear()
+        # Niveau du sol connu dès l'arrivée : une chute confirmée sur pose masquée garde ainsi une
+        # référence pour juger la remontée des hanches lors d'une reprise.
+        track.floor_hip_y_px.append(features.hip_center_px[1])
         speed_text = "rapide" if fast else "lente"
         return [DetectionEvent(
             EventKind.FALL_SUSPECTED, t, (track.track_id,), posture=Posture.FALLING,

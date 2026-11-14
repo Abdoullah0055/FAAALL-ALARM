@@ -199,23 +199,30 @@ def command_sim(args: argparse.Namespace) -> None:
     load_package(REPO_ROOT)
     scenarios = importlib.import_module("faaall_alarm.simulation.scenarios")
     names = args.names or list(scenarios.SCENARIOS)
+    rng = np.random.default_rng(args.seed)
     for name in names:
         scenario = scenarios.get_scenario(name)
+        if args.fps:
+            scenario.fps = args.fps
         times, frames, truth, centers = [], [], [], []
         for t in scenario.frame_times():
             t = float(t)
             if not scenario.camera_available(t):
                 continue
+            if args.jitter_s:  # cadence irrégulière : horodatages décalés au hasard
+                t = max(t + float(rng.uniform(-args.jitter_s, args.jitter_s)), times[-1] + 1e-3 if times else 0.0)
             times.append(t)
             poses = scenario.poses_at(t)
-            frames.append([p.landmarks for p in poses])
+            degraded = [degrade(p.landmarks, args, rng) for p in poses]
+            frames.append(degraded)
             states = [person.state_at(t) for person in scenario.persons]
-            visible = iter(poses)
+            visible = iter(zip(poses, degraded))
             labels, frame_centers = [], []
             for state in states:
-                pose = next(visible) if state is not None else None
+                pose, seen = next(visible) if state is not None else (None, None)
                 labels.append(expected_posture(state, pose))
-                frame_centers.append(hip_center(pose.landmarks) if pose is not None else (math.nan, math.nan))
+                # Vérité dans le même repère que les poses rejouées (variante éloignée comprise).
+                frame_centers.append(hip_center(seen) if seen is not None else (math.nan, math.nan))
             truth.append("|".join(labels))
             centers.append(frame_centers)
         meta = {"source": "simulation", "fps": scenario.fps, "lying_zones": scenario.lying_zones,
@@ -223,8 +230,24 @@ def command_sim(args: argparse.Namespace) -> None:
                 "expected_falls": getattr(scenario, "expected_falls", None),
                 "expected_recoveries": getattr(scenario, "expected_recoveries", None)}
         meta["truth_centers"] = centers  # centre des hanches de chaque personne, pour compter les inversions
-        save_poses(POSE_DIR / f"sim-{name}.npz", times, frames, scenario.frame_size_px, meta, truth)
+        save_poses(Path(args.out_dir) / f"sim-{name}.npz", times, frames, scenario.frame_size_px, meta, truth)
     print(f"{len(names)} scénarios exportés")
+
+
+def degrade(landmarks: np.ndarray, args: argparse.Namespace, rng: np.random.Generator) -> np.ndarray:
+    """Variante de conditions : personne plus loin (`scale`), bruit des points et visibilité dégradée
+    (faible lumière), pour éprouver le détecteur hors des scènes de réglage."""
+    out = landmarks.copy()
+    if args.scale != 1.0:  # plus loin : silhouette réduite autour du point au sol de l'image
+        anchor = np.array([0.5, 0.92])
+        out[:, :2] = anchor + (out[:, :2] - anchor) * args.scale
+    if args.noise:
+        out[:, :2] += rng.normal(0.0, args.noise, size=(out.shape[0], 2))
+    if args.dropout:
+        lost = rng.random(out.shape[0]) < args.dropout
+        out[lost, 2] = np.minimum(out[lost, 2], 0.2)
+        out[~lost, 2] = np.clip(out[~lost, 2] - rng.uniform(0, 0.25, size=(~lost).sum()), 0.0, 1.0)
+    return out
 
 
 # -- rejeu -----------------------------------------------------------------------------------------------------
@@ -713,6 +736,13 @@ def main(argv: list[str] | None = None) -> None:
 
     sim = sub.add_parser("sim", help="exporte les scénarios simulés")
     sim.add_argument("names", nargs="*")
+    sim.add_argument("--out-dir", default=str(POSE_DIR))
+    sim.add_argument("--fps", type=float, default=0.0, help="cadence imposée (sinon celle du scénario)")
+    sim.add_argument("--jitter-s", type=float, default=0.0, help="décalage aléatoire des horodatages")
+    sim.add_argument("--scale", type=float, default=1.0, help="< 1 : personne plus loin de la caméra")
+    sim.add_argument("--noise", type=float, default=0.0, help="écart type du bruit des points (fraction d'image)")
+    sim.add_argument("--dropout", type=float, default=0.0, help="part des points rendus peu visibles")
+    sim.add_argument("--seed", type=int, default=3)
     sim.set_defaults(func=command_sim)
 
     replay = sub.add_parser("replay", help="rejoue les poses dans le détecteur d'un dépôt")

@@ -261,3 +261,44 @@ def test_remplacement_de_trace_pendant_un_contact_candidat_ne_leve_pas_d_erreur(
             tracks[track_id].record(float(t), features, features.torso_center_px)
             present.append(tracks[track_id])
         detector.update(float(t), present)  # ne doit lever aucune exception
+
+
+# -- réaudit : difficultés combinées ---------------------------------------------------------------
+def test_se_baisser_derriere_un_meuble_puis_disparaitre_n_est_pas_une_chute():
+    events = analyse(get_scenario("ramasser_derriere_meuble"))
+    assert not kinds(events, EventKind.FALL_CONFIRMED)
+
+
+def test_chute_lente_masquee_par_un_passant_reste_signalee():
+    confirmed = kinds(analyse(get_scenario("chute_lente_pendant_passage")), EventKind.FALL_CONFIRMED)
+    assert len(confirmed) == 1
+    assert confirmed[0].cause in (FallCause.INDIVIDUAL, FallCause.UNDETERMINED)  # jamais « collision »
+
+
+def test_temps_masque_ne_compte_pas_dans_le_maintien_au_sol():
+    scenario = get_scenario("affaissement_lent")  # au sol à 6,5 s
+    scenario.persons[0].hide(6.6, 9.0)
+    confirmed = kinds(analyse(scenario), EventKind.FALL_CONFIRMED)
+    assert confirmed and confirmed[0].timestamp_s >= 9.0 + DetectionThresholds().fast_fall_confirm_hold_s - 0.1
+
+
+def test_assise_avec_images_douteuses_arme_quand_meme_le_detecteur():
+    # Une image inexploitable isolée (faible lumière) ne doit pas empêcher l'armement d'une
+    # personne assise, sans quoi sa chute depuis la chaise passerait inaperçue.
+    scenario = get_scenario("chute_assise")
+    pipeline = DetectionPipeline()
+    events = []
+    for k, t in enumerate(scenario.frame_times()):
+        observation = scenario.observation_at(float(t))
+        if k % 7 == 3 and t < 3.0:
+            dark = observation.poses[0].landmarks.copy()
+            dark[:, 2] = 0.1
+            observation = FrameObservation(observation.timestamp_s, observation.frame_size_px, (PersonPose(dark),))
+        events += pipeline.process(observation).events
+    assert len(kinds(events, EventKind.FALL_CONFIRMED)) == 1
+
+
+def test_apres_une_chute_vers_la_camera_la_posture_reste_au_sol():
+    timeline = posture_timeline(get_scenario("chute_vers_camera"))  # au sol à 3,8 s
+    after = {p for t, p in timeline if t >= 5.5}
+    assert after == {Posture.LYING}

@@ -59,6 +59,7 @@ class PersonTrack:
     fall_state: FallState = FallState.DISARMED
     # Mémoire du détecteur de chute.
     upright_since_t: float | None = None
+    not_upright_since_t: float | None = None
     suspicion_upright_since_t: float | None = None
     low_since_t: float | None = None
     recovery_since_t: float | None = None
@@ -208,7 +209,7 @@ class PersonTrack:
     def ground_speed_torso(self, window_s: float, now_t: float) -> tuple[float, float]:
         """Déplacement net au sol (torses/s) et variation relative de taille (1/s) sur la fenêtre.
 
-        La marche de profil déplace le torse latéralement ; la marche vers la caméra ou en sens
+        La marche de profil déplace les hanches latéralement ; la marche vers la caméra ou en sens
         inverse déplace les pieds verticalement dans l'image et change la taille apparente. Un
         balancement sur place oscille mais ne produit pas de déplacement net sur une seconde.
         """
@@ -218,7 +219,7 @@ class PersonTrack:
         first, last = window[0].features, window[-1].features
         elapsed = window[-1].t - window[0].t
         scale = max(self.scale_px(), 1e-6)
-        dx = last.torso_center_px[0] - first.torso_center_px[0]
+        dx = last.hip_center_px[0] - first.hip_center_px[0]  # le torse avance quand on se penche, pas les hanches
         dy = 0.0
         if first.ankle_center_px is not None and last.ankle_center_px is not None:
             dy = last.ankle_center_px[1] - first.ankle_center_px[1]

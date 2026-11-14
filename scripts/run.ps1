@@ -5,12 +5,14 @@
   .\scripts\run.ps1
   .\scripts\run.ps1 -Video "C:\Mes vidéos\essai.mp4"
   .\scripts\run.ps1 -Camera 1 -Countdown 15
+  .\scripts\run.ps1 -Video "C:\Mes vidéos\essai.mp4" -Diagnostic "artifacts\diagnostic.jsonl"
 #>
 [CmdletBinding()]
 param(
     [string]$Video = "",
     [Nullable[int]]$Camera = $null,
-    [Nullable[double]]$Countdown = $null
+    [Nullable[double]]$Countdown = $null,
+    [string]$Diagnostic = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +24,7 @@ $arguments = @("-m", "faaall_alarm")
 if ($Video) { $arguments += @("--video", $Video) }
 if ($null -ne $Camera) { $arguments += @("--camera", $Camera) }
 if ($null -ne $Countdown) { $arguments += @("--countdown", $Countdown) }
+if ($Diagnostic) { $arguments += @("--diagnostic", $Diagnostic) }
 Set-Location -LiteralPath $root
 & $python @arguments
 exit $LASTEXITCODE

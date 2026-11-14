@@ -57,11 +57,13 @@ class DetectionThresholds:
     lying_bbox_aspect: float = 1.3  # largeur / hauteur de la boîte englobante
     lying_height_ratio: float = 0.55  # hauteur apparente / référence d'un corps couché
     sitting_thigh_vertical_ratio: float = 0.4  # (genou - hanche) verticale / torse
+    sitting_min_thigh_vertical_ratio: float = -0.3  # genoux plus hauts que ça au-dessus des hanches : pas assis
     sitting_max_torso_angle_deg: float = 45.0  # au-delà, le torse penché n'est plus « assis »
     upright_max_torso_angle_deg: float = 30.0  # torse assez droit pour debout, marche ou assis
     walking_speed_torso_per_s: float = 0.3  # déplacement net au sol (hanches, pieds, profondeur)
     walking_scale_rate_per_s: float = 0.2  # variation relative de taille : marche vers ou loin de la caméra
     walking_leg_swing_torso: float = 0.35  # alternance des chevilles sur la fenêtre : pas de marche
+    walking_max_torso_angle_deg: float = 20.0  # déplacement net compté comme marche seulement torse droit
     walking_max_proportion_change: float = 0.15  # torse et silhouette changent ensemble (log) : marche
     falling_descent_speed_torso_per_s: float = 2.0  # descente rapide des hanches (chute franche)
     zone_fall_descent_speed_torso_per_s: float = 3.0  # dans une zone de repos : se laisser tomber ≠ chute
@@ -95,7 +97,7 @@ class DetectionThresholds:
     fast_fall_confirm_hold_s: float = 1.0  # idem après un basculement rapide (chute franche)
     settle_speed_torso_per_s: float = 0.5  # mouvement résiduel toléré pendant le maintien
     lost_after_fast_fall_confirm_s: float = 2.5  # pose perdue après une chute rapide basse : confirmation
-    lost_confirm_min_drop_torso: float = 1.0  # ... ou après une descente des hanches au moins aussi forte
+    lost_confirm_min_drop_torso: float = 1.1  # ... à condition que les hanches soient descendues d'autant
     suspicion_timeout_s: float = 6.0  # durée maximale d'une suspicion sans confirmation
     suspicion_clear_hold_s: float = 0.4  # redressement soutenu avant de lever une suspicion
     recovery_torso_angle_deg: float = 35.0  # torse « redressé » pour la reprise
@@ -105,6 +107,7 @@ class DetectionThresholds:
     recovery_hip_rise_hidden_legs_torso: float = 1.3  # idem quand les jambes ne sont pas visibles
     recovery_hold_s: float = 2.0  # maintien de la reprise avant d'annuler ou de clore
     rearm_hold_s: float = 1.0  # posture de départ exploitable avant de pouvoir détecter
+    upright_break_s: float = 0.3  # interruption (image douteuse, pose perdue) tolérée dans ce maintien
 
     # Suivi de deux personnes au plus.
     max_people: int = 2
