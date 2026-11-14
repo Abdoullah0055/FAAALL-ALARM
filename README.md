@@ -18,7 +18,9 @@ Le comportement attendu est défini dans [PRODUCT.md](PRODUCT.md), la répartiti
 | eSpeak NG | 1.52.0 (`winget install eSpeak-NG.eSpeak-NG`) |
 | Modèle de pose | `pose_landmarker_lite.task` (float16, version 1), source officielle Google [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker), empreinte SHA-256 vérifiée par `install.ps1` |
 
-Les autres versions de Python n'ont pas été essayées. `pyproject.toml` demande Python 3.11 ou plus (lot 2). Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests du lot 1 ont réussi ; la suite complète compte maintenant 169 tests.
+Les autres versions de Python n'ont pas été essayées. `pyproject.toml` demande Python 3.11 ou plus (lot 2). Sur l'installation neuve, `install.ps1`, la vérification et les 136 tests du lot 1 ont réussi ; la suite complète compte maintenant 211 tests.
+
+Le modèle `lite` est conservé après comparaison sur les mêmes MP4 : `full` et `heavy` détectent moins souvent la personne au sol (64 % et 73 % contre 83 %) pour 1,3 à 3,2 fois le temps d'inférence. MediaPipe tourne avec un seuil de confiance de 0,3 (`pose_min_confidence`). Détails : [docs/vision-evaluation.md](docs/vision-evaluation.md).
 
 ## Installer
 
@@ -38,7 +40,10 @@ Si l'exécution de scripts est bloquée : `powershell -ExecutionPolicy Bypass -F
 .\scripts\run.ps1                                  # webcam 0
 .\scripts\run.ps1 -Camera 1 -Countdown 15          # autre caméra, décompte de 15 s
 .\scripts\run.ps1 -Video "C:\Mes vidéos\essai.mp4" # rejoue un MP4 avec MediaPipe (mode test)
+.\scripts\run.ps1 -Video "C:\Mes vidéos\essai.mp4" -Diagnostic "artifacts\diagnostic.jsonl"  # diagnostic local de la vision
 ```
+
+Le diagnostic, désactivé par défaut, écrit pour chaque personne et chaque image les points fiables, les indices calculés, l'état du détecteur, les changements de piste et les événements. Il n'écrit ni image ni coordonnée brute ; `artifacts\` est ignoré par Git.
 
 Le SMS est **simulé par défaut**. La lecture d'un MP4, la démo et les tests ne peuvent jamais envoyer de SMS réel, même avec des identifiants Twilio valides. Le mode réel exige `sms_mode = live`, l'activation explicite dans les réglages et une vraie webcam.
 
@@ -72,6 +77,8 @@ La démo génère `artifacts\demo\<scénario>.mp4` (ignoré par Git), le rejoue 
 
 Les tests n'utilisent ni webcam, ni Internet, ni SMS réel, ni délai réel de dix secondes : ils rejouent des scénarios de poses simulées avec une horloge contrôlable.
 
+Pour mesurer la vision sur des MP4 (postures, chutes manquées, fausses alertes, délai contact-voix, suivi, coût par étape) et comparer deux versions du code, utiliser `scripts\evaluate_vision.py` : voir [docs/vision-evaluation.md](docs/vision-evaluation.md#reproduire).
+
 ## Organisation du code
 
 | Fichier | Rôle |
@@ -88,7 +95,7 @@ Les tests n'utilisent ni webcam, ni Internet, ni SMS réel, ni délai réel de d
 | `faaall_alarm/core.py`, `app.py`, `ui/` | Assemblage, fil d'analyse, écran Tkinter |
 | `faaall_alarm/simulation/` | Scénarios de mannequins, rendu MP4, démo |
 
-Les seuils de détection (valeurs par défaut et unités) sont dans `DetectionThresholds`, [faaall_alarm/config.py](faaall_alarm/config.py). Ils sont calibrés sur des poses simulées : ils sont à recalibrer sur la webcam cible.
+Les seuils de détection (valeurs par défaut et unités) sont dans `DetectionThresholds`, [faaall_alarm/config.py](faaall_alarm/config.py). Ils sont calibrés sur des poses simulées et sur le corpus UR Fall (20 chutes, 27 activités), puis vérifiés sur un jeu réservé ([résultats](docs/vision-evaluation.md)). Ils restent à vérifier sur la webcam cible.
 
 ## Données locales
 
