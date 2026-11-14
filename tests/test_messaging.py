@@ -4,15 +4,19 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from threading import Event
+from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 from faaall_alarm.demo import Demo
-from faaall_alarm.http import ServiceError
+from faaall_alarm.http import ServiceError, request_json
 from faaall_alarm.replies import (Care, Interpretation, OpenAI, ReplyTarget, associate,
                                   interpret_simulated, newer)
 from faaall_alarm.sms import Alert, Delivery, Incoming, Mode, SmsConfig, SmsService, Source
+from faaall_alarm.settings_page import test_result_label as sms_test_label
 
 
 NOW = datetime(2026, 11, 14, 14, 32, tzinfo=timezone.utc)
@@ -124,6 +128,34 @@ class SmsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.submit(ALERT)
         self.assertEqual(service.submit(ALERT, confirmed_test=True).state, Delivery.PENDING)
+
+    def test_settings_diagnostic_reports_configuration_and_rejection_without_provider_text(self):
+        incomplete = self.service(None, Source.MANUAL_SMS, replace(CONFIG, auth_token=""))
+        self.assertIn("TWILIO_AUTH_TOKEN", incomplete.check_diagnostic())
+
+        def reject(request, timeout):
+            payload = json.dumps({"code": 21608, "message": CONFIG.recipient}).encode()
+            raise HTTPError(request.full_url, 400, "Bad request", {}, BytesIO(payload))
+
+        with patch("faaall_alarm.http.build_opener") as opener:
+            opener.return_value.open.side_effect = reject
+            service = self.service(request_json, Source.MANUAL_SMS)
+            self.assertIn("Vérification du canal · HTTP 400", service.check_diagnostic())
+            result = service.submit(ALERT, confirmed_test=True)
+        label = sms_test_label(result)
+        self.assertIn("SMS de test · Échec\nSoumission · HTTP 400 · code Twilio 21608", label)
+        self.assertNotIn(CONFIG.recipient, label)
+
+    def test_settings_diagnostic_reports_delivery_error_code(self):
+        def transport(url, headers, body=None):
+            if body:
+                return {"sid": SID, "status": "queued"}
+            return {"status": "undelivered", "error_code": 30007}
+
+        service = self.service(transport, Source.MANUAL_SMS)
+        service.submit(ALERT, confirmed_test=True)
+        self.assertIn("Livraison · code Twilio 30007",
+                      sms_test_label(service.refresh(ALERT.incident_id)))
 
     def test_delivery_polling_failure_then_explicit_failure(self):
         def transport(url, headers, body=None):

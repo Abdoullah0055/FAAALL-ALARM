@@ -1,14 +1,18 @@
 """Transport JSON borné, sans redirection ni répétition implicite d'un POST."""
 
 import json
-from urllib.error import HTTPError, URLError
+from http.client import HTTPException
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 class ServiceError(Exception):
-    def __init__(self, status: int | None = None):
+    def __init__(self, status: int | None = None, *, code: int | None = None,
+                 reason: str = "réponse inattendue du service"):
         super().__init__("Service distant indisponible.")
         self.status = status
+        self.code = code
+        self.reason = reason
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -22,9 +26,20 @@ def request_json(url: str, headers: dict[str, str], body: bytes | None = None) -
         with build_opener(NoRedirect).open(request, timeout=8) as response:
             result = json.load(response)
     except HTTPError as error:
-        error.close()
-        raise ServiceError(error.code) from None
-    except (URLError, OSError, ValueError) as error:
+        code = None
+        try:
+            with error:
+                payload = json.loads(error.read(8192))
+            if isinstance(payload, dict):
+                raw_code = payload.get("code")
+                if type(raw_code) is int and 10000 <= raw_code <= 99999:
+                    code = raw_code
+        except (HTTPException, OSError, ValueError):
+            pass
+        raise ServiceError(error.code, code=code) from None
+    except (HTTPException, OSError):
+        raise ServiceError(reason="connexion impossible ou délai dépassé") from None
+    except ValueError:
         raise ServiceError() from None
     if not isinstance(result, dict):
         raise ServiceError()

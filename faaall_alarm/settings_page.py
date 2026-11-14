@@ -17,7 +17,15 @@ from .demo import Demo
 from .http import ServiceError
 from .replies import DEMO_REPLY, OpenAI, ReplyTarget, associate, newer
 from .settings import FULL_FRAME, LocalSettings, Settings, SettingsPort
-from .sms import Alert, Mode, POLL_SECONDS, REPLY_AMBIGUITY_WINDOW, REPLY_WINDOW, SmsService, Source
+from .sms import (Alert, Delivery, Mode, POLL_SECONDS, REPLY_AMBIGUITY_WINDOW,
+                  REPLY_WINDOW, SmsService, Source, Submission, twilio_diagnostic)
+
+
+def test_result_label(submission: Submission) -> str:
+    label = f"SMS de test · {submission.state}"
+    if submission.diagnostic:
+        label += f"\n{submission.diagnostic}"
+    return label
 
 
 def open_settings(parent: tk.Misc, backend: SettingsPort, services: LocalSettings,
@@ -239,16 +247,20 @@ class SettingsPage:
         settings = self.sms_settings()
         self.real_result.set("Vérification du canal…")
         self.run(lambda: SmsService(self.state_dir / "sms.sqlite3", self.services.sms(settings),
-                                    Source.MANUAL_SMS).check(), self.real_result.set,
-                 lambda: self.real_result.set("SMS indisponible"))
+                                    Source.MANUAL_SMS).check_diagnostic(), self.real_result.set,
+                 lambda: self.real_result.set(
+                     "Vérification impossible. Vérifiez l’accès au stockage local de l’application."))
 
     def test_sms(self):
         if self.real_test_running:
             return
         settings = self.sms_settings()
         config = self.services.sms(settings)
-        if config.mode is not Mode.LIVE or not config.valid():
-            self.real_result.set("Choisissez Réel et configurez Twilio avant le test.")
+        if config.mode is not Mode.LIVE:
+            self.real_result.set("Choisissez Réel pour envoyer un SMS de test.")
+            return
+        if issues := config.issues():
+            self.real_result.set("SMS de test bloqué · configuration\n" + "\n".join(issues))
             return
         if not messagebox.askyesno("Envoi réel",
                                    f"Envoyer le SMS de test convenu au numéro se terminant par "
@@ -264,7 +276,7 @@ class SettingsPage:
 
         def started(result):
             service, submission = result
-            self.real_result.set(f"SMS de test · {submission.state}")
+            self.real_result.set(test_result_label(submission))
             if submission.provider_sid:
                 self.poll_test(service, submission, None)
             else:
@@ -272,7 +284,9 @@ class SettingsPage:
 
         def failed():
             self.real_test_running = False
-            self.real_result.set("SMS de test · résultat indisponible")
+            self.real_result.set(
+                "SMS de test · résultat indisponible. Vérifiez le stockage local et les journaux "
+                "Twilio avant de relancer le test.")
 
         self.run(submit, started, failed)
 
@@ -282,6 +296,8 @@ class SettingsPage:
 
         def poll():
             current = service.refresh(submission.incident_id)
+            if current.state is Delivery.FAILED and not current.diagnostic:
+                current = replace(current, diagnostic=submission.diagnostic)
             targets = [
                 ReplyTarget(item.incident_id, item.attempted_at, service.config.recipient,
                             service.config.sender, item.incident_id == submission.incident_id)
@@ -289,12 +305,12 @@ class SettingsPage:
             ]
             response = latest
             ambiguous = False
-            read_failed = False
+            read_error = None
             try:
                 messages = service.poll_replies(since)
-            except ServiceError:
+            except ServiceError as error:
                 messages = []
-                read_failed = True
+                read_error = twilio_diagnostic(error)
             for message in messages:
                 # Un SMS réel de test ne doit pas accaparer les réponses du moteur d’Adam.
                 if associate(message, targets) is None:
@@ -302,11 +318,11 @@ class SettingsPage:
                 elif newer(message, response[0] if response else None):
                     interpretation = OpenAI(*self.services.model()).interpret(message.body, redact=redact)
                     response = message, interpretation
-            return current, response, ambiguous, read_failed
+            return current, response, ambiguous, read_error
 
         def completed(result):
-            current, response, ambiguous, read_failed = result
-            label = f"SMS de test · {current.state}"
+            current, response, ambiguous, read_error = result
+            label = test_result_label(current)
             if response:
                 message, interpretation = response
                 label += f"\n{message.received_at.astimezone():%H:%M:%S} · {interpretation.label()}"
@@ -314,8 +330,8 @@ class SettingsPage:
                     label += " · OpenAI indisponible"
             if ambiguous:
                 label += "\nRéponse reçue, à vérifier (rattachement incertain)"
-            if read_failed:
-                label += "\nLecture des réponses indisponible"
+            if read_error:
+                label += f"\nLecture des réponses · {read_error}"
             self.real_result.set(label)
             schedule(current, response)
 
@@ -326,7 +342,7 @@ class SettingsPage:
                 self.real_test_running = False
 
         def failed():
-            self.real_result.set(f"SMS de test · {submission.state}\nLecture des réponses indisponible")
+            self.real_result.set(test_result_label(submission) + "\nSuivi du SMS interrompu.")
             schedule(submission, latest)
 
         self.run(poll, completed, failed)

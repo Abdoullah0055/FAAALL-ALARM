@@ -5,7 +5,7 @@ import hashlib
 import re
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
@@ -53,12 +53,43 @@ class SmsConfig:
     auth_token: str = field(default="", repr=False)
 
     def valid(self) -> bool:
-        return bool(
-            E164.fullmatch(self.sender) and E164.fullmatch(self.recipient)
-            and self.sender != self.recipient
-            and re.fullmatch(r"AC[a-fA-F0-9]{32}", self.account_sid)
-            and self.auth_token.strip()
-        )
+        return not self.issues()
+
+    def issues(self) -> list[str]:
+        issues = []
+        if not E164.fullmatch(self.sender):
+            issues.append("Saisissez le numéro Twilio au format international (+…).")
+        if not E164.fullmatch(self.recipient):
+            issues.append("Saisissez le numéro du proche au format international (+…).")
+        if self.sender and self.sender == self.recipient:
+            issues.append("Utilisez deux numéros différents.")
+        if not re.fullmatch(r"AC[a-fA-F0-9]{32}", self.account_sid):
+            issues.append("Vérifiez TWILIO_ACCOUNT_SID (manquant ou format invalide).")
+        if not self.auth_token.strip():
+            issues.append("Renseignez TWILIO_AUTH_TOKEN.")
+        return issues
+
+
+def twilio_diagnostic(error: ServiceError) -> str:
+    hints = {
+        20003: "Vérifiez les identifiants et les droits du compte Twilio.",
+        21211: "Vérifiez le numéro du proche.",
+        21408: "Vérifiez les permissions SMS pour le pays du proche.",
+        21606: "Vérifiez que le numéro Twilio appartient au compte et prend en charge les SMS.",
+        21608: "Vérifiez le numéro du proche et les restrictions du compte Twilio.",
+        30007: "Le message a été filtré. Consultez les journaux de messagerie Twilio.",
+    }
+    details = []
+    if error.status is not None:
+        details.append(f"HTTP {error.status}")
+    if error.code is not None:
+        details.append(f"code Twilio {error.code}")
+    hint = hints.get(error.code)
+    if hint is None and error.status in {401, 403}:
+        hint = hints[20003]
+    if details:
+        return " · ".join(details) + f". {hint or 'Consultez les journaux de messagerie Twilio.'}"
+    return f"Twilio · {error.reason}. Vérifiez la connexion et les journaux Twilio."
 
 
 @dataclass(frozen=True)
@@ -87,6 +118,7 @@ class Submission:
     state: Delivery
     attempted_at: datetime
     provider_sid: str | None = field(default=None, repr=False)
+    diagnostic: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -124,7 +156,7 @@ class _Twilio:
     def _get(self, path: str) -> dict:
         return self.transport(f"https://api.twilio.com{path}", self.headers)
 
-    def submit(self, message: str) -> tuple[str, Delivery]:
+    def submit(self, message: str) -> tuple[str, Delivery, str | None]:
         headers = self.headers | {"Content-Type": "application/x-www-form-urlencoded"}
         body = urlencode({
             "From": self.config.sender, "To": self.config.recipient, "Body": message,
@@ -133,12 +165,23 @@ class _Twilio:
         sid = result.get("sid")
         if not isinstance(sid, str) or not MESSAGE_SID.fullmatch(sid):
             raise ServiceError()
-        return sid, _delivery(result.get("status"))
+        state, diagnostic = self._message_status(result)
+        return sid, state, diagnostic
 
-    def status(self, sid: str) -> Delivery:
+    def status(self, sid: str) -> tuple[Delivery, str | None]:
         if not MESSAGE_SID.fullmatch(sid):
             raise ValueError("Identifiant de message invalide.")
-        return _delivery(self._get(f"{self.resource}/{sid}.json").get("status"))
+        return self._message_status(self._get(f"{self.resource}/{sid}.json"))
+
+    @staticmethod
+    def _message_status(result: dict) -> tuple[Delivery, str | None]:
+        state = _delivery(result.get("status"))
+        if state is not Delivery.FAILED:
+            return state, None
+        code = result.get("error_code")
+        if type(code) is int and 10000 <= code <= 99999:
+            return state, f"Livraison · {twilio_diagnostic(ServiceError(code=code))}"
+        return state, "Livraison refusée. Consultez les journaux de messagerie Twilio."
 
     def _inbox_path(self, since: datetime, page_size: int = 100) -> str:
         query = urlencode({
@@ -239,6 +282,17 @@ class SmsService:
             return "SMS indisponible"
         return "SMS opérationnel"
 
+    def check_diagnostic(self) -> str:
+        if self.simulated:
+            return "SMS simulé · choisissez Réel pour vérifier Twilio."
+        if issues := self.config.issues():
+            return "Configuration SMS\n" + "\n".join(issues)
+        try:
+            self._twilio().check(self.now())
+        except ServiceError as error:
+            return f"Vérification du canal · {twilio_diagnostic(error)}"
+        return "Twilio accessible · utilisez le SMS de test pour vérifier la livraison."
+
     def submit(self, alert: Alert, *, confirmed_test: bool = False) -> Submission:
         if not alert.incident_id.strip():
             raise ValueError("Un identifiant d’incident stable est requis.")
@@ -267,12 +321,14 @@ class SmsService:
         if self.simulated:
             return Submission(alert.incident_id, initial, attempted_at)
         try:
-            sid, state = self._twilio().submit(message)
+            sid, state, diagnostic = self._twilio().submit(message)
         except ServiceError as error:
             # Une réponse 4xx explicite vaut refus, sauf un délai dépassé.
             rejected = error.status is not None and 400 <= error.status < 500 and error.status != 408
             sid, state = None, Delivery.FAILED if rejected else Delivery.UNKNOWN
-        return self._save_result(Submission(alert.incident_id, state, attempted_at, sid))
+            diagnostic = f"Soumission · {twilio_diagnostic(error)}"
+        saved = self._save_result(Submission(alert.incident_id, state, attempted_at, sid))
+        return replace(saved, diagnostic=diagnostic)
 
     def lookup(self, incident_id: str) -> Submission | None:
         with closing(self._connect()) as db:
@@ -308,14 +364,17 @@ class SmsService:
         if (self.simulated or previous is None or previous.provider_sid is None
                 or previous.state in {Delivery.DELIVERED, Delivery.FAILED}):
             return previous
+        diagnostic = None
         try:
-            state = self._twilio().status(previous.provider_sid)
-        except ServiceError:
+            state, diagnostic = self._twilio().status(previous.provider_sid)
+        except ServiceError as error:
             state = Delivery.UNKNOWN
+            diagnostic = f"Suivi de livraison · {twilio_diagnostic(error)}"
         if state is Delivery.PENDING and self.now() >= previous.attempted_at + DELIVERY_WINDOW:
             state = Delivery.UNKNOWN
-        return self._save_result(Submission(incident_id, state, previous.attempted_at,
-                                            previous.provider_sid))
+        saved = self._save_result(Submission(incident_id, state, previous.attempted_at,
+                                             previous.provider_sid))
+        return replace(saved, diagnostic=diagnostic if saved.state is state else None)
 
     def inject_reply(self, body: str, sid: str, received_at: datetime) -> None:
         if not self.simulated:
